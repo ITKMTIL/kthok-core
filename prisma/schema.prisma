@@ -1,0 +1,30 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql" //idk what are we using
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        Int    @id @default(autoincrement())
+  email     String @unique
+  studentID String @unique
+  username  String
+
+  // relation field
+  faculty Faculty @relation(fields: [facultyCode], references: [code])
+
+  // Field that store 2 digits faculty code
+  facultyCode String @map("faculty_code")
+
+  createdAt DateTime @default(now())
+}
+
+model Faculty {
+  id    Int    @id @default(autoincrement())
+  name  String
+  code  String @unique
+  users User[]
+}
