@@ -10,6 +10,7 @@ import {
 import { randomUUID } from 'node:crypto';
 import { Server, Socket } from 'socket.io';
 import { AuthService } from '../auth/auth.service';
+import { CallService } from '../call/call.service';
 import { Student } from '../auth/utils/student';
 import { isFacultyId } from '../common/constants/faculties';
 import {
@@ -48,6 +49,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     private readonly matchmaking: MatchmakingService,
     private readonly music: MusicService,
     private readonly reactions: ReactionsService,
+    private readonly calls: CallService,
     private readonly rateLimit: RateLimitService,
     private readonly auth: AuthService,
   ) {}
@@ -155,6 +157,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       at: Date.now(),
     };
     this.reactions.track(room.id, message.id);
+    this.calls.noteMessage(room.id);
     this.server.to(partner.socketId).emit('chat:message', message);
     return { ok: true, message };
   }
@@ -227,6 +230,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     if (left) {
       this.music.clear(left.room.id);
       this.reactions.clear(left.room.id);
+      this.calls.clear(left.room.id);
     }
     if (left?.partner) {
       this.cancelPendingClose(left.partner.socketId);
