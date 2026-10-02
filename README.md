@@ -26,17 +26,27 @@ repo นี้คือ server (NestJS + socket.io) ทำหน้าที่�
 - **คิวเพลง YouTube** ต่อห้อง — server ถือสถานะเพลง ทุกคนในห้องเห็นตรงกัน
 - **สัญญาณโทรเสียง** — ส่งต่อ offer/answer/ICE ของ WebRTC และออก credential TURN อายุสั้น
 - **รอการกลับมา** — socket หลุดแล้วห้องยังอยู่ช่วงหนึ่ง กลับมาทันก็คุยต่อได้
+- **บล็อกและระงับบัญชี** — คู่ที่บล็อกกันจะไม่ถูกจับคู่อีก บัญชีที่ถูกระงับเชื่อมต่อไม่ได้
+- **สถิติการใช้งาน** — นับยอดรวมรายวัน (จับคู่ ข้อความ สายโทร ความพอใจ) และมี endpoint สำหรับหน้า dashboard ของ admin
 
 ### ความเป็นส่วนตัว
 
-- ไม่มีฐานข้อมูล สถานะทั้งหมดอยู่ใน memory restart แล้วหายหมด
-- ไม่เก็บเนื้อหาข้อความ เก็บแค่ id ของข้อความล่าสุดเพื่อให้รีแอคชันทำงาน
-- อีเมลและรหัสนักศึกษาใช้ตอนล็อกอินเท่านั้น รหัสนักศึกษากับคณะอยู่ใน session token ที่เข้ารหัสไว้ฝั่งผู้ใช้
+- สถานะห้อง ข้อความ คิวเพลง และสายโทรอยู่ใน memory เท่านั้น restart แล้วหายหมด
+- ไม่เก็บเนื้อหาข้อความ เก็บแค่ id ของข้อความล่าสุดใน memory เพื่อให้รีแอคชันทำงาน
+- ไม่เก็บอีเมล รหัสนักศึกษา หรือนามแฝง
 - เสียงของการโทรไม่ผ่าน server นี้
+
+สิ่งที่เก็บในฐานข้อมูล (เมื่อตั้ง `DATABASE_URL`):
+
+| ตาราง | เก็บอะไร | ใช้ทำอะไร |
+| --- | --- | --- |
+| `users` | HMAC ของรหัสนักศึกษา (ย้อนกลับไม่ได้), คณะ, เวลาใช้งานล่าสุด, วันที่ถูกระงับ | ระงับบัญชี นับผู้ใช้ |
+| `blocks` | คู่ของผู้ใช้ที่บล็อกกัน | ไม่จับคู่ซ้ำ |
+| `daily_stats` | ยอดรวมรายวันต่อ metric และคณะ | รายงานการใช้งาน |
 
 ## เทคโนโลยี
 
-NestJS 11 · TypeScript · socket.io · google-auth-library
+NestJS 11 · TypeScript · socket.io · Prisma + PostgreSQL · google-auth-library
 
 ## เริ่มใช้งาน
 
@@ -49,6 +59,19 @@ pnpm start:dev
 ```
 
 server เปิดที่ http://localhost:3001 ไฟล์ `.env` ถูกอ่านตอนเริ่ม process แก้แล้วต้อง restart
+
+### ฐานข้อมูล (ไม่บังคับ)
+
+ไม่ตั้ง `DATABASE_URL` server ก็รันได้ แต่จะไม่มีการบล็อก การระงับบัญชี และสถิติ
+ถ้าจะใช้ เปิด Postgres จาก compose แล้วสร้างตาราง:
+
+```bash
+docker compose up -d db
+echo 'DATABASE_URL=postgresql://kthok:kthok@localhost:5432/kthok' >> .env
+pnpm exec prisma migrate deploy
+```
+
+การระงับบัญชียังไม่มีหน้าจัดการ ต้องตั้งค่า `banned_until` ในตาราง `users` เอง (เช่นผ่าน `pnpm exec prisma studio`)
 
 ### ตัวแปรใน `.env`
 
@@ -65,6 +88,9 @@ server เปิดที่ http://localhost:3001 ไฟล์ `.env` ถูก
 | `CALL_MIN_MESSAGES` | `5` | ต้องคุยกันกี่ข้อความก่อนถึงจะโทรได้ |
 | `TURN_KEY_ID`, `TURN_KEY_API_TOKEN` | ว่าง | key ของ Cloudflare Realtime TURN เว้นว่าง = ใช้ STUN อย่างเดียว |
 | `CALL_FORCE_RELAY` | `true` | ให้เสียงทุกสายผ่าน TURN เพื่อไม่ให้คู่สนทนาเห็น IP กัน |
+| `DATABASE_URL` | ว่าง | connection string ของ PostgreSQL เว้นว่าง = ไม่ใช้ฐานข้อมูล |
+| `USER_HASH_SECRET` | ว่าง | ค่าลับสำหรับทำ hash รหัสนักศึกษา เว้นว่าง = ใช้ `SESSION_SECRET` ห้ามเปลี่ยนหลังมีผู้ใช้แล้ว ไม่งั้นการบล็อกและการระงับจะหลุด |
+| `ADMIN_STUDENT_IDS` | ว่าง | รหัสนักศึกษาของ admin คั่นด้วย `,` ใช้เปิดหน้า dashboard |
 
 ### คำสั่ง
 
@@ -74,16 +100,41 @@ server เปิดที่ http://localhost:3001 ไฟล์ `.env` ถูก
 | `pnpm build` / `pnpm start:prod` | build และรันแบบ production |
 | `pnpm lint` | ตรวจโค้ดด้วย ESLint |
 
+## Docker
+
+image ทั้งหมด build สำหรับ `linux/amd64`
+
+```bash
+./scripts/build-image.sh
+```
+
+ตั้งชื่อและ tag ได้ด้วยตัวแปร เช่น `IMAGE=registry.example.com/kthok-core TAG=1.0.0 PUSH=1 ./scripts/build-image.sh`
+container จะรัน `prisma migrate deploy` ให้เองตอนเริ่ม ถ้ามี `DATABASE_URL`
+
+`docker-compose.yml` รวม Postgres, core และ client ไว้ด้วยกัน โดยคาดว่า clone `kthok-client` ไว้ข้าง ๆ repo นี้:
+
+```bash
+docker compose build
+docker compose up -d
+```
+
+compose อ่านค่าจาก `.env` ของ repo นี้ ค่าที่ใช้ตอน build หน้าเว็บคือ `GOOGLE_CLIENT_ID`, `NEXT_PUBLIC_CORE_URL` และ `NEXT_PUBLIC_SITE_URL`
+ตั้ง `POSTGRES_PASSWORD` ก่อนใช้งานจริง
+
 ## โครงสร้างโปรเจกต์
 
 ```
 src/
+  admin/         endpoint สรุปสถิติสำหรับ dashboard
   auth/          ล็อกอิน Google, session token, แปลงรหัสนักศึกษาเป็นคณะ
   chat/          gateway หลัก: เชื่อมต่อ, จับคู่, ข้อความ, ปิดห้อง
   matchmaking/   logic จับคู่และจัดการห้อง
   music/         คิวเพลงต่อห้อง
   reactions/     รีแอคชันบนข้อความ
   call/          สัญญาณโทรและ credential TURN
+  users/         ผู้ใช้แบบ hash, การระงับ, การบล็อก
+  stats/         ตัวนับสถิติรายวัน
+  prisma/        การเชื่อมต่อฐานข้อมูล
   common/        ของใช้ร่วม: รายชื่อคณะ, rate limit, กรองคำ, ตัวช่วย YouTube
   config/        โหลด env, CORS, ตัวเลือกของ gateway, feature flag
 ```
@@ -102,11 +153,11 @@ src/
 
 | กลุ่ม | จากหน้าเว็บ | จาก server |
 | --- | --- | --- |
-| จับคู่ | `match:find`, `room:leave` | `match:found`, `match:fallback`, `room:closed`, `partner:presence`, `stats` |
+| จับคู่ | `match:find`, `room:leave`, `room:block`, `room:feedback` | `match:found`, `match:fallback`, `room:closed`, `partner:presence`, `stats` |
 | แชต | `chat:send`, `chat:typing`, `chat:react` | `chat:message`, `chat:typing`, `chat:reaction` |
 | เพลง | `music:add`, `music:play`, `music:pause`, `music:skip`, `music:remove` | `music:state` |
 | โทร | `call:invite`, `call:accept`, `call:decline`, `call:end`, `call:signal`, `call:ice` | `call:incoming`, `call:accepted`, `call:ended`, `call:signal` |
-| ระบบ | — | `auth:ok`, `auth:error`, `features` |
+| ระบบ | — | `auth:ok`, `auth:error`, `auth:banned`, `features` |
 
 ## Flow การทำงานของแต่ละฟีเจอร์
 
@@ -401,7 +452,8 @@ flowchart LR
 ## ข้อจำกัดที่ควรรู้
 
 - รันได้ instance เดียว เพราะสถานะอยู่ใน memory
-- ยังไม่มีระบบ report หรือ block ผู้ใช้
+- ยังไม่มีระบบ report และยังไม่มีหน้าจัดการการระงับบัญชี
+- ตัวนับสถิติถูกเขียนลงฐานข้อมูลเป็นรอบ ถ้า process ถูกปิดกะทันหัน ตัวเลขรอบล่าสุด (ไม่เกิน 30 วินาที) จะหาย
 - รายชื่อคณะและรหัสคณะต้องแก้ให้ตรงกันกับฝั่ง client (`src/common/constants/faculties.ts` และ `src/auth/utils/student.ts`)
 
 ---
