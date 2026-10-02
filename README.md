@@ -1,4 +1,10 @@
-# K-Thok — core
+<p align="center">
+  <img src="docs/logo.svg" width="120" height="120" alt="โลโก้ K-Thok">
+</p>
+
+<h1 align="center">K-Thok — core</h1>
+
+<p align="center">แชตนิรนามสำหรับชาว สจล. กดแล้วจับคู่ให้เลย</p>
 
 **K-Thok** ย่อมาจาก *KMITL Thok* (thok = talk) เป็นเว็บแชตนิรนามสำหรับนักศึกษา สจล.
 กดหาห้องแล้วระบบจับคู่ให้ทันที ไม่มีการปัดหรือรอ match

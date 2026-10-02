@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" width="96" height="96" fill="none" stroke="#1b1a17" stroke-width="4" stroke-linecap="round" stroke-linejoin="round">
+  <title>K-Thok</title>
+  <rect x="2" y="2" width="92" height="92" rx="22" fill="#f4f2ec" stroke-width="3"/>
+  <g transform="translate(16 15)">
+    <path d="M14 7h36c5.500 0 10 4.500 10 10v20c0 5.500-4.500 10-10 10H29L15 59l2-12h-3C8.500 47 4 42.500 4 37V17C4 11.500 8.500 7 14 7z" fill="#ffd8bd"/>
+    <path d="M24 20v6M40 20v6" stroke-width="5"/>
+    <path d="M21 32c6.500 7 15.500 7 22 0"/>
+    <path d="M13 29h4M47 29h4" stroke="#e35205" stroke-width="3"/>
+  </g>
+</svg>
