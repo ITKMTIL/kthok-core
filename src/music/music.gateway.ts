@@ -12,7 +12,7 @@ import {
 } from '../common/rate-limit/rate-limit.service';
 import { fail } from '../common/utils/ack';
 import { fetchVideoTitle, parseVideoId } from '../common/utils/youtube';
-import { ALLOWED_ORIGINS } from '../config/origins';
+import { GATEWAY_OPTIONS } from '../config/gateway';
 import { MatchmakingService, Room } from '../matchmaking/matchmaking.service';
 import { MusicService } from './music.service';
 
@@ -23,7 +23,7 @@ const LIMITS = {
   musicControl: { max: 12, windowMs: 5_000 },
 } satisfies Record<string, RateLimit>;
 
-@WebSocketGateway({ cors: { origin: ALLOWED_ORIGINS } })
+@WebSocketGateway(GATEWAY_OPTIONS)
 export class MusicGateway {
   @WebSocketServer()
   private readonly server: Server;

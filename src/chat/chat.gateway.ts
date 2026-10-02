@@ -18,7 +18,7 @@ import {
 } from '../common/rate-limit/rate-limit.service';
 import { fail } from '../common/utils/ack';
 import { hasBannedWords, maskBannedWords } from '../common/utils/word-filter';
-import { ALLOWED_ORIGINS } from '../config/origins';
+import { GATEWAY_OPTIONS, RECONNECT_GRACE_MS } from '../config/gateway';
 import {
   MatchmakingService,
   Participant,
@@ -37,10 +37,12 @@ const LIMITS = {
   typing: { max: 10, windowMs: 5_000 },
 } satisfies Record<string, RateLimit>;
 
-@WebSocketGateway({ cors: { origin: ALLOWED_ORIGINS } })
+@WebSocketGateway(GATEWAY_OPTIONS)
 export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   @WebSocketServer()
   private readonly server: Server;
+
+  private readonly pendingClose = new Map<string, NodeJS.Timeout>();
 
   constructor(
     private readonly matchmaking: MatchmakingService,
@@ -59,12 +61,23 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     }
     client.data = { student };
     if (student) client.emit('auth:ok', { faculty: student.faculty });
+    if (this.cancelPendingClose(client.id))
+      this.notifyPresence(client.id, false);
     this.broadcastStats();
   }
 
   handleDisconnect(client: Socket) {
-    this.closeRoomOf(client);
     this.rateLimit.forget(client.id);
+    if (this.matchmaking.roomOf(client.id)) {
+      this.notifyPresence(client.id, true);
+      this.pendingClose.set(
+        client.id,
+        setTimeout(() => {
+          this.closeRoomOf(client.id);
+          this.broadcastStats();
+        }, RECONNECT_GRACE_MS),
+      );
+    }
     this.broadcastStats();
   }
 
@@ -89,7 +102,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       return fail('invalid_prefer_faculty');
     }
 
-    this.closeRoomOf(client);
+    this.closeRoomOf(client.id);
 
     const user: Participant = {
       socketId: client.id,
@@ -109,13 +122,16 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     this.broadcastStats();
 
     return matched
-      ? matchedPayload(room, room.owner, preferenceMet)
+      ? {
+          ...matchedPayload(room, room.owner, preferenceMet),
+          partnerAway: this.pendingClose.has(room.owner.socketId),
+        }
       : { ok: true, status: 'waiting', roomId: room.id };
   }
 
   @SubscribeMessage('room:leave')
   leave(@ConnectedSocket() client: Socket) {
-    this.closeRoomOf(client);
+    this.closeRoomOf(client.id);
     this.broadcastStats();
     return { ok: true };
   }
@@ -190,13 +206,30 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     return this.rateLimit.allow(client.id, action, LIMITS[action]);
   }
 
-  private closeRoomOf(client: Socket) {
-    const left = this.matchmaking.leave(client.id);
+  private notifyPresence(socketId: string, away: boolean) {
+    const partner = this.matchmaking.activePartnerOf(socketId);
+    if (partner) {
+      this.server.to(partner.socketId).emit('partner:presence', { away });
+    }
+  }
+
+  private cancelPendingClose(socketId: string): boolean {
+    const timer = this.pendingClose.get(socketId);
+    if (!timer) return false;
+    clearTimeout(timer);
+    this.pendingClose.delete(socketId);
+    return true;
+  }
+
+  private closeRoomOf(socketId: string) {
+    this.cancelPendingClose(socketId);
+    const left = this.matchmaking.leave(socketId);
     if (left) {
       this.music.clear(left.room.id);
       this.reactions.clear(left.room.id);
     }
     if (left?.partner) {
+      this.cancelPendingClose(left.partner.socketId);
       this.server
         .to(left.partner.socketId)
         .emit('room:closed', { roomId: left.room.id, reason: 'partner_left' });

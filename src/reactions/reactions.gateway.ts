@@ -11,13 +11,13 @@ import {
   RateLimit,
   RateLimitService,
 } from '../common/rate-limit/rate-limit.service';
-import { ALLOWED_ORIGINS } from '../config/origins';
+import { GATEWAY_OPTIONS } from '../config/gateway';
 import { MatchmakingService } from '../matchmaking/matchmaking.service';
 import { ReactionsService } from './reactions.service';
 
 const REACT_LIMIT: RateLimit = { max: 10, windowMs: 5_000 };
 
-@WebSocketGateway({ cors: { origin: ALLOWED_ORIGINS } })
+@WebSocketGateway(GATEWAY_OPTIONS)
 export class ReactionsGateway {
   @WebSocketServer()
   private readonly server: Server;
