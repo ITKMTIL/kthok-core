@@ -18,6 +18,7 @@ import {
   Participant,
   Room,
 } from '../matchmaking/matchmaking.service';
+import { StatsService } from '../stats/stats.service';
 import { CallService } from './call.service';
 import { TurnService } from './turn.service';
 
@@ -43,6 +44,7 @@ export class CallGateway {
     private readonly matchmaking: MatchmakingService,
     private readonly calls: CallService,
     private readonly turn: TurnService,
+    private readonly stats: StatsService,
     private readonly rateLimit: RateLimitService,
   ) {}
 
@@ -84,6 +86,7 @@ export class CallGateway {
       return fail('no_call');
     }
     this.stopRinging(pair.room.id);
+    this.stats.count('call');
     this.server
       .to(pair.partner.socketId)
       .emit('call:accepted', { roomId: pair.room.id });

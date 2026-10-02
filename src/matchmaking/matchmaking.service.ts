@@ -6,6 +6,8 @@ export interface Participant {
   socketId: string;
   nickname: string;
   faculty: FacultyId;
+  userHash: string | null;
+  avoid: Set<string>;
 }
 
 export interface Room {
@@ -14,6 +16,7 @@ export interface Room {
   ownerPrefers: FacultyId | null;
   guest: Participant | null;
   createdAt: number;
+  matchedAt: number | null;
 }
 
 export interface FindResult {
@@ -39,6 +42,7 @@ export class MatchmakingService {
       ownerPrefers: prefers,
       guest: null,
       createdAt: Date.now(),
+      matchedAt: null,
     };
     this.rooms.set(created.id, created);
     this.roomBySocket.set(user.socketId, created.id);
@@ -86,6 +90,11 @@ export class MatchmakingService {
     return room.owner.socketId === socketId ? room.guest : room.owner;
   }
 
+  roomCounts(): { waiting: number; active: number } {
+    const waiting = this.waitingCount();
+    return { waiting, active: this.rooms.size - waiting };
+  }
+
   waitingCount(): number {
     let count = 0;
     for (const room of this.rooms.values()) if (!room.guest) count++;
@@ -98,6 +107,7 @@ export class MatchmakingService {
     prefers: FacultyId | null,
   ): FindResult {
     room.guest = user;
+    room.matchedAt = Date.now();
     this.roomBySocket.set(user.socketId, room.id);
     return {
       room,
@@ -116,6 +126,7 @@ export class MatchmakingService {
     let bestScore = -1;
     for (const room of this.rooms.values()) {
       if (room.guest || room === exclude) continue;
+      if (!canPair(room.owner, user)) continue;
       const ownerIsPreferred =
         prefers !== null && room.owner.faculty === prefers;
       if (preferredOnly && !ownerIsPreferred) continue;
@@ -129,4 +140,12 @@ export class MatchmakingService {
     }
     return best;
   }
+}
+
+function canPair(a: Participant, b: Participant): boolean {
+  if (a.userHash !== null && a.userHash === b.userHash) return false;
+  return !(
+    (b.userHash !== null && a.avoid.has(b.userHash)) ||
+    (a.userHash !== null && b.avoid.has(a.userHash))
+  );
 }

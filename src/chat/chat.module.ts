@@ -5,6 +5,7 @@ import { RateLimitModule } from '../common/rate-limit/rate-limit.module';
 import { MatchmakingModule } from '../matchmaking/matchmaking.module';
 import { MusicModule } from '../music/music.module';
 import { ReactionsModule } from '../reactions/reactions.module';
+import { UsersModule } from '../users/users.module';
 import { ChatGateway } from './chat.gateway';
 
 @Module({
@@ -15,6 +16,7 @@ import { ChatGateway } from './chat.gateway';
     MusicModule,
     RateLimitModule,
     ReactionsModule,
+    UsersModule,
   ],
   providers: [ChatGateway],
 })

@@ -6,14 +6,23 @@ import {
 } from '@nestjs/common';
 import { OAuth2Client } from 'google-auth-library';
 import { randomBytes } from 'node:crypto';
-import { isFacultyId } from '../common/constants/faculties';
 import { openSession, sealSession } from './utils/session-cipher';
-import { Student, studentFromEmail } from './utils/student';
+import { FacultyId, isFacultyId } from '../common/constants/faculties';
+import { StatsService } from '../stats/stats.service';
+import { UsersService } from '../users/users.service';
+import { studentFromEmail } from './utils/student';
 
 const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const MAX_TOKEN_LENGTH = 1024;
+const SESSION_VERSION = 2;
+
+export interface Identity {
+  userHash: string;
+  faculty: FacultyId;
+}
 
 interface SessionPayload {
+  v?: unknown;
   sub?: unknown;
   faculty?: unknown;
   exp?: unknown;
@@ -29,7 +38,10 @@ export class AuthService {
   private readonly secret =
     process.env.SESSION_SECRET || randomBytes(32).toString('hex');
 
-  constructor() {
+  constructor(
+    private readonly users: UsersService,
+    private readonly stats: StatsService,
+  ) {
     if (this.clientId && !process.env.SESSION_SECRET) {
       throw new Error(
         'SESSION_SECRET is required when GOOGLE_CLIENT_ID is set',
@@ -48,14 +60,23 @@ export class AuthService {
     const email = await this.verifiedEmail(credential, this.clientId);
     const lookup = studentFromEmail(email, this.emailDomain);
     if (!lookup.ok) throw new ForbiddenException(lookup.error);
-    return this.issueSession(lookup.student);
+
+    const identity: Identity = {
+      userHash: this.users.hashOf(lookup.student.studentId),
+      faculty: lookup.student.faculty,
+    };
+    const user = await this.users.touch(identity.userHash, identity.faculty);
+    if (this.users.isBanned(user)) throw new ForbiddenException('banned');
+    this.stats.count('login', identity.faculty);
+    return this.issueSession(identity);
   }
 
-  issueSession(student: Student, now = Date.now()) {
+  issueSession(identity: Identity, now = Date.now()) {
     const token = sealSession(
       {
-        sub: student.studentId,
-        faculty: student.faculty,
+        v: SESSION_VERSION,
+        sub: identity.userHash,
+        faculty: identity.faculty,
         exp: now + SESSION_TTL_MS,
       },
       this.secret,
@@ -63,7 +84,7 @@ export class AuthService {
     return { token };
   }
 
-  verifySession(token: unknown, now = Date.now()): Student | null {
+  verifySession(token: unknown, now = Date.now()): Identity | null {
     if (
       typeof token !== 'string' ||
       !token ||
@@ -73,11 +94,12 @@ export class AuthService {
     }
     const payload = openSession(token, this.secret) as SessionPayload | null;
     return payload &&
+      payload.v === SESSION_VERSION &&
       typeof payload.sub === 'string' &&
       typeof payload.exp === 'number' &&
       payload.exp > now &&
       isFacultyId(payload.faculty)
-      ? { studentId: payload.sub, faculty: payload.faculty }
+      ? { userHash: payload.sub, faculty: payload.faculty }
       : null;
   }
 

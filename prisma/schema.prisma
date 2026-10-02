@@ -3,28 +3,45 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql" //idk what are we using
+  provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 
 model User {
-  id        Int    @id @default(autoincrement())
-  email     String @unique
-  studentID String @unique
-  username  String
+  id          Int       @id @default(autoincrement())
+  hash        String    @unique
+  faculty     String
+  bannedUntil DateTime? @map("banned_until")
+  banReason   String?   @map("ban_reason")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  lastSeenAt  DateTime  @default(now()) @map("last_seen_at")
 
-  // relation field
-  faculty Faculty @relation(fields: [facultyCode], references: [code])
+  blocksMade     Block[] @relation("blocker")
+  blocksReceived Block[] @relation("blocked")
 
-  // Field that store 2 digits faculty code
-  facultyCode String @map("faculty_code")
-
-  createdAt DateTime @default(now())
+  @@map("users")
 }
 
-model Faculty {
-  id    Int    @id @default(autoincrement())
-  name  String
-  code  String @unique
-  users User[]
+model Block {
+  id        Int      @id @default(autoincrement())
+  blockerId Int      @map("blocker_id")
+  blockedId Int      @map("blocked_id")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  blocker User @relation("blocker", fields: [blockerId], references: [id], onDelete: Cascade)
+  blocked User @relation("blocked", fields: [blockedId], references: [id], onDelete: Cascade)
+
+  @@unique([blockerId, blockedId])
+  @@index([blockedId])
+  @@map("blocks")
+}
+
+model DailyStat {
+  day     DateTime @db.Date
+  metric  String
+  faculty String   @default("")
+  count   Int      @default(0)
+
+  @@id([day, metric, faculty])
+  @@map("daily_stats")
 }
