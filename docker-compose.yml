@@ -1,0 +1,60 @@
+name: kthok
+
+services:
+  db:
+    image: postgres:16-alpine
+    platform: linux/amd64
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: kthok
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-kthok}
+      POSTGRES_DB: kthok
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U kthok -d kthok"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  core:
+    image: ${CORE_IMAGE:-kthok-core}:${TAG:-latest}
+    platform: linux/amd64
+    build:
+      context: .
+      platforms:
+        - linux/amd64
+    restart: unless-stopped
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      PORT: 3001
+      DATABASE_URL: postgresql://kthok:${POSTGRES_PASSWORD:-kthok}@db:5432/kthok
+    ports:
+      - "3001:3001"
+    depends_on:
+      db:
+        condition: service_healthy
+
+  client:
+    image: ${CLIENT_IMAGE:-kthok-client}:${TAG:-latest}
+    platform: linux/amd64
+    build:
+      context: ../kthok-client
+      platforms:
+        - linux/amd64
+      args:
+        NEXT_PUBLIC_CORE_URL: ${NEXT_PUBLIC_CORE_URL:-http://localhost:3001}
+        NEXT_PUBLIC_GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+        NEXT_PUBLIC_SITE_URL: ${NEXT_PUBLIC_SITE_URL:-http://localhost:3000}
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    depends_on:
+      - core
+
+volumes:
+  db-data:
