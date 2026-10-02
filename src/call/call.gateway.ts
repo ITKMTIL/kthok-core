@@ -19,12 +19,14 @@ import {
   Room,
 } from '../matchmaking/matchmaking.service';
 import { CallService } from './call.service';
+import { TurnService } from './turn.service';
 
 const RING_TIMEOUT_MS = Number(process.env.CALL_RING_TIMEOUT_MS ?? 30_000);
 const MAX_SIGNAL_LENGTH = 20_000;
 
 const LIMITS = {
   invite: { max: 3, windowMs: 60_000 },
+  ice: { max: 6, windowMs: 60_000 },
   signal: { max: 200, windowMs: 10_000 },
 } satisfies Record<string, RateLimit>;
 
@@ -40,6 +42,7 @@ export class CallGateway {
   constructor(
     private readonly matchmaking: MatchmakingService,
     private readonly calls: CallService,
+    private readonly turn: TurnService,
     private readonly rateLimit: RateLimitService,
   ) {}
 
@@ -61,6 +64,17 @@ export class CallGateway {
     );
     this.server.to(partner.socketId).emit('call:incoming', { roomId: room.id });
     return { ok: true };
+  }
+
+  @SubscribeMessage('call:ice')
+  async ice(@ConnectedSocket() client: Socket) {
+    const pair = this.pairOf(client);
+    if (!pair || !this.calls.get(pair.room.id)) return fail('no_call');
+    if (!this.rateLimit.allow(client.id, 'call:ice', LIMITS.ice)) {
+      return fail('rate_limited');
+    }
+    const config = await this.turn.iceConfig();
+    return config ? { ok: true, ...config } : fail('relay_unavailable');
   }
 
   @SubscribeMessage('call:accept')
