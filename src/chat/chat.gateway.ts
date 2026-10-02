@@ -25,6 +25,7 @@ import {
   Room,
 } from '../matchmaking/matchmaking.service';
 import { MusicService } from '../music/music.service';
+import { ReactionsService } from '../reactions/reactions.service';
 
 const MAX_NICKNAME_LENGTH = 24;
 const MAX_MESSAGE_LENGTH = 1000;
@@ -44,6 +45,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   constructor(
     private readonly matchmaking: MatchmakingService,
     private readonly music: MusicService,
+    private readonly reactions: ReactionsService,
     private readonly rateLimit: RateLimitService,
     private readonly auth: AuthService,
   ) {}
@@ -126,8 +128,9 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     const raw = typeof body?.text === 'string' ? body.text.trim() : '';
     if (!raw || raw.length > MAX_MESSAGE_LENGTH) return fail('invalid_text');
 
-    const partner = this.matchmaking.activePartnerOf(client.id);
-    if (!partner) return fail('not_in_chat');
+    const room = this.matchmaking.activeRoomOf(client.id);
+    const partner = room && this.matchmaking.partnerOf(room, client.id);
+    if (!room || !partner) return fail('not_in_chat');
     if (!this.allow(client, 'message')) return fail('rate_limited');
 
     const message = {
@@ -135,6 +138,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       text: maskBannedWords(raw),
       at: Date.now(),
     };
+    this.reactions.track(room.id, message.id);
     this.server.to(partner.socketId).emit('chat:message', message);
     return { ok: true, message };
   }
@@ -188,7 +192,10 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   private closeRoomOf(client: Socket) {
     const left = this.matchmaking.leave(client.id);
-    if (left) this.music.clear(left.room.id);
+    if (left) {
+      this.music.clear(left.room.id);
+      this.reactions.clear(left.room.id);
+    }
     if (left?.partner) {
       this.server
         .to(left.partner.socketId)
