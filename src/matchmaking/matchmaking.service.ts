@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
-import { FacultyId } from './faculties';
+import { FacultyId } from '../common/constants/faculties';
 
 export interface Participant {
   socketId: string;
@@ -70,6 +70,16 @@ export class MatchmakingService {
   roomOf(socketId: string): Room | null {
     const roomId = this.roomBySocket.get(socketId);
     return (roomId && this.rooms.get(roomId)) || null;
+  }
+
+  activeRoomOf(socketId: string): Room | null {
+    const room = this.roomOf(socketId);
+    return room?.guest ? room : null;
+  }
+
+  activePartnerOf(socketId: string): Participant | null {
+    const room = this.activeRoomOf(socketId);
+    return room ? this.partnerOf(room, socketId) : null;
   }
 
   partnerOf(room: Room, socketId: string): Participant | null {

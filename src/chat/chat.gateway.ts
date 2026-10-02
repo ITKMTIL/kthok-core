@@ -9,23 +9,32 @@ import {
 } from '@nestjs/websockets';
 import { randomUUID } from 'node:crypto';
 import { Server, Socket } from 'socket.io';
-import { isFacultyId } from './faculties';
-import { MatchmakingService, Participant, Room } from './matchmaking.service';
-import { MusicService, parseVideoId } from './music.service';
+import { AuthService } from '../auth/auth.service';
+import { Student } from '../auth/utils/student';
+import { isFacultyId } from '../common/constants/faculties';
+import {
+  RateLimit,
+  RateLimitService,
+} from '../common/rate-limit/rate-limit.service';
+import { fail } from '../common/utils/ack';
+import { hasBannedWords, maskBannedWords } from '../common/utils/word-filter';
+import { ALLOWED_ORIGINS } from '../config/origins';
+import {
+  MatchmakingService,
+  Participant,
+  Room,
+} from '../matchmaking/matchmaking.service';
+import { MusicService } from '../music/music.service';
 
 const MAX_NICKNAME_LENGTH = 24;
 const MAX_MESSAGE_LENGTH = 1000;
 const PREFERENCE_GRACE_MS = Number(process.env.PREFERENCE_GRACE_MS ?? 8000);
-const MAX_URL_LENGTH = 200;
-const MAX_TITLE_LENGTH = 120;
-const OEMBED_TIMEOUT_MS = 4000;
 
-type Failure = { ok: false; error: string };
-const fail = (error: string): Failure => ({ ok: false, error });
-
-const ALLOWED_ORIGINS: (string | RegExp)[] = process.env.CLIENT_ORIGIN
-  ? process.env.CLIENT_ORIGIN.split(',')
-  : ['http://localhost:3000', /^https:\/\/[a-z0-9-]+\.trycloudflare\.com$/];
+const LIMITS = {
+  find: { max: 4, windowMs: 10_000 },
+  message: { max: 5, windowMs: 3_000 },
+  typing: { max: 10, windowMs: 5_000 },
+} satisfies Record<string, RateLimit>;
 
 @WebSocketGateway({ cors: { origin: ALLOWED_ORIGINS } })
 export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
@@ -35,14 +44,25 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   constructor(
     private readonly matchmaking: MatchmakingService,
     private readonly music: MusicService,
+    private readonly rateLimit: RateLimitService,
+    private readonly auth: AuthService,
   ) {}
 
-  handleConnection() {
+  handleConnection(client: Socket) {
+    const student = this.auth.verifySession(client.handshake.auth?.token);
+    if (this.auth.required && !student) {
+      client.emit('auth:error');
+      client.disconnect(true);
+      return;
+    }
+    client.data = { student };
+    if (student) client.emit('auth:ok', { faculty: student.faculty });
     this.broadcastStats();
   }
 
   handleDisconnect(client: Socket) {
     this.closeRoomOf(client);
+    this.rateLimit.forget(client.id);
     this.broadcastStats();
   }
 
@@ -51,13 +71,18 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     @ConnectedSocket() client: Socket,
     @MessageBody() body: Record<string, unknown> | undefined,
   ) {
+    if (!this.allow(client, 'find')) return fail('rate_limited');
+
     const nickname =
       typeof body?.nickname === 'string' ? body.nickname.trim() : '';
     if (!nickname || nickname.length > MAX_NICKNAME_LENGTH) {
       return fail('invalid_nickname');
     }
-    if (!isFacultyId(body?.faculty)) return fail('invalid_faculty');
-    const prefers = body.preferFaculty ?? null;
+    if (hasBannedWords(nickname)) return fail('nickname_not_allowed');
+    const student = (client.data as { student?: Student | null }).student;
+    const faculty = this.auth.required ? student?.faculty : body?.faculty;
+    if (!isFacultyId(faculty)) return fail('invalid_faculty');
+    const prefers = body?.preferFaculty ?? null;
     if (prefers !== null && !isFacultyId(prefers)) {
       return fail('invalid_prefer_faculty');
     }
@@ -67,7 +92,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     const user: Participant = {
       socketId: client.id,
       nickname,
-      faculty: body.faculty,
+      faculty,
     };
     const { room, matched, preferenceMet } = this.matchmaking.findOrCreate(
       user,
@@ -98,13 +123,18 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     @ConnectedSocket() client: Socket,
     @MessageBody() body: Record<string, unknown> | undefined,
   ) {
-    const text = typeof body?.text === 'string' ? body.text.trim() : '';
-    if (!text || text.length > MAX_MESSAGE_LENGTH) return fail('invalid_text');
+    const raw = typeof body?.text === 'string' ? body.text.trim() : '';
+    if (!raw || raw.length > MAX_MESSAGE_LENGTH) return fail('invalid_text');
 
-    const partner = this.activePartner(client);
+    const partner = this.matchmaking.activePartnerOf(client.id);
     if (!partner) return fail('not_in_chat');
+    if (!this.allow(client, 'message')) return fail('rate_limited');
 
-    const message = { id: randomUUID(), text, at: Date.now() };
+    const message = {
+      id: randomUUID(),
+      text: maskBannedWords(raw),
+      at: Date.now(),
+    };
     this.server.to(partner.socketId).emit('chat:message', message);
     return { ok: true, message };
   }
@@ -114,83 +144,11 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     @ConnectedSocket() client: Socket,
     @MessageBody() body: Record<string, unknown> | undefined,
   ) {
-    const partner = this.activePartner(client);
-    if (!partner) return;
+    const partner = this.matchmaking.activePartnerOf(client.id);
+    if (!partner || !this.allow(client, 'typing')) return;
     this.server
       .to(partner.socketId)
       .emit('chat:typing', { typing: body?.typing === true });
-  }
-
-  @SubscribeMessage('music:add')
-  async addTrack(
-    @ConnectedSocket() client: Socket,
-    @MessageBody() body: Record<string, unknown> | undefined,
-  ) {
-    const url = typeof body?.url === 'string' ? body.url : '';
-    const videoId = url.length <= MAX_URL_LENGTH ? parseVideoId(url) : null;
-    if (!videoId) return fail('invalid_url');
-
-    const before = this.activeRoom(client);
-    if (!before) return fail('not_in_chat');
-
-    const title = await fetchTitle(videoId);
-    if (title === null) return fail('video_unavailable');
-
-    const room = this.activeRoom(client);
-    if (room?.id !== before.id) return fail('not_in_chat');
-
-    const self = room.owner.socketId === client.id ? room.owner : room.guest;
-    const track = this.music.add(room.id, {
-      videoId,
-      title,
-      addedBy: self?.nickname ?? '',
-    });
-    if (!track) return fail('queue_full');
-
-    this.broadcastMusic(room);
-    return { ok: true };
-  }
-
-  @SubscribeMessage('music:play')
-  playMusic(@ConnectedSocket() client: Socket) {
-    const room = this.activeRoom(client);
-    if (room && this.music.play(room.id)) this.broadcastMusic(room);
-  }
-
-  @SubscribeMessage('music:pause')
-  pauseMusic(@ConnectedSocket() client: Socket) {
-    const room = this.activeRoom(client);
-    if (room && this.music.pause(room.id)) this.broadcastMusic(room);
-  }
-
-  @SubscribeMessage('music:skip')
-  skipTrack(
-    @ConnectedSocket() client: Socket,
-    @MessageBody() body: Record<string, unknown> | undefined,
-  ) {
-    const room = this.activeRoom(client);
-    if (
-      room &&
-      typeof body?.trackId === 'string' &&
-      this.music.skip(room.id, body.trackId)
-    ) {
-      this.broadcastMusic(room);
-    }
-  }
-
-  @SubscribeMessage('music:remove')
-  removeTrack(
-    @ConnectedSocket() client: Socket,
-    @MessageBody() body: Record<string, unknown> | undefined,
-  ) {
-    const room = this.activeRoom(client);
-    if (
-      room &&
-      typeof body?.trackId === 'string' &&
-      this.music.remove(room.id, body.trackId)
-    ) {
-      this.broadcastMusic(room);
-    }
   }
 
   private fallback(socketId: string, roomId: string) {
@@ -224,24 +182,8 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       );
   }
 
-  private activeRoom(client: Socket): Room | null {
-    const room = this.matchmaking.roomOf(client.id);
-    return room?.guest ? room : null;
-  }
-
-  private activePartner(client: Socket): Participant | null {
-    const room = this.activeRoom(client);
-    return room ? this.matchmaking.partnerOf(room, client.id) : null;
-  }
-
-  private broadcastMusic(room: Room) {
-    if (!room.guest) return;
-    this.server
-      .to([room.owner.socketId, room.guest.socketId])
-      .emit('music:state', {
-        roomId: room.id,
-        ...this.music.snapshot(room.id),
-      });
+  private allow(client: Socket, action: keyof typeof LIMITS): boolean {
+    return this.rateLimit.allow(client.id, action, LIMITS[action]);
   }
 
   private closeRoomOf(client: Socket) {
@@ -276,23 +218,4 @@ function matchedPayload(
     preferenceMet,
     partnerPreferenceMet,
   };
-}
-
-async function fetchTitle(videoId: string): Promise<string | null> {
-  const watchUrl = `https://www.youtube.com/watch?v=${videoId}`;
-  const fallbackTitle = `YouTube · ${videoId}`;
-  try {
-    const response = await fetch(
-      `https://www.youtube.com/oembed?format=json&url=${encodeURIComponent(watchUrl)}`,
-      { signal: AbortSignal.timeout(OEMBED_TIMEOUT_MS) },
-    );
-    if (response.status >= 400 && response.status < 500) return null;
-    if (!response.ok) return fallbackTitle;
-    const data = (await response.json()) as { title?: unknown };
-    return typeof data.title === 'string' && data.title
-      ? data.title.slice(0, MAX_TITLE_LENGTH)
-      : fallbackTitle;
-  } catch {
-    return fallbackTitle;
-  }
 }

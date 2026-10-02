@@ -3,15 +3,6 @@ import { randomUUID } from 'node:crypto';
 
 export const MAX_QUEUE_LENGTH = 50;
 
-const YOUTUBE_HOSTS = new Set([
-  'youtube.com',
-  'www.youtube.com',
-  'm.youtube.com',
-  'music.youtube.com',
-]);
-const VIDEO_ID = /^[\w-]{11}$/;
-const PATH_PREFIXES = ['/shorts/', '/embed/', '/live/'];
-
 export interface Track {
   id: string;
   videoId: string;
@@ -32,29 +23,6 @@ export interface MusicSnapshot {
   queue: Track[];
   playing: boolean;
   positionSec: number;
-}
-
-export function parseVideoId(input: string): string | null {
-  let url: URL;
-  try {
-    url = new URL(input.trim());
-  } catch {
-    return null;
-  }
-  if (url.protocol !== 'https:' && url.protocol !== 'http:') return null;
-
-  let id: string | null = null;
-  if (url.hostname === 'youtu.be') {
-    id = url.pathname.slice(1).split('/')[0];
-  } else if (YOUTUBE_HOSTS.has(url.hostname)) {
-    const prefix = PATH_PREFIXES.find((p) => url.pathname.startsWith(p));
-    id = prefix
-      ? url.pathname.slice(prefix.length).split('/')[0]
-      : url.pathname === '/watch'
-        ? url.searchParams.get('v')
-        : null;
-  }
-  return id && VIDEO_ID.test(id) ? id : null;
 }
 
 @Injectable()

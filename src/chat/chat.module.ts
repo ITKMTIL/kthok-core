@@ -1,9 +1,12 @@
 import { Module } from '@nestjs/common';
+import { AuthModule } from '../auth/auth.module';
+import { RateLimitModule } from '../common/rate-limit/rate-limit.module';
+import { MatchmakingModule } from '../matchmaking/matchmaking.module';
+import { MusicModule } from '../music/music.module';
 import { ChatGateway } from './chat.gateway';
-import { MatchmakingService } from './matchmaking.service';
-import { MusicService } from './music.service';
 
 @Module({
-  providers: [ChatGateway, MatchmakingService, MusicService],
+  imports: [AuthModule, MatchmakingModule, MusicModule, RateLimitModule],
+  providers: [ChatGateway],
 })
 export class ChatModule {}

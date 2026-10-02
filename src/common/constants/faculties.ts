@@ -11,6 +11,10 @@ export const FACULTY_IDS = [
   'medicine',
   'dentistry',
   'international-college',
+  'materials-innovation',
+  'advanced-manufacturing',
+  'aviation',
+  'music-engineering',
 ] as const;
 
 export type FacultyId = (typeof FACULTY_IDS)[number];
