@@ -11,6 +11,7 @@ import {
   RateLimitService,
 } from '../common/rate-limit/rate-limit.service';
 import { fail } from '../common/utils/ack';
+import { CALL_ENABLED } from '../config/features';
 import { GATEWAY_OPTIONS } from '../config/gateway';
 import {
   MatchmakingService,
@@ -44,6 +45,7 @@ export class CallGateway {
 
   @SubscribeMessage('call:invite')
   invite(@ConnectedSocket() client: Socket) {
+    if (!CALL_ENABLED) return fail('disabled');
     const pair = this.pairOf(client);
     if (!pair) return fail('not_in_chat');
     const { room, partner } = pair;
