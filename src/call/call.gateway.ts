@@ -18,6 +18,7 @@ import {
   Participant,
   Room,
 } from '../matchmaking/matchmaking.service';
+import { PushService } from '../push/push.service';
 import { StatsService } from '../stats/stats.service';
 import { CallService } from './call.service';
 import { TurnService } from './turn.service';
@@ -46,6 +47,7 @@ export class CallGateway {
     private readonly turn: TurnService,
     private readonly stats: StatsService,
     private readonly rateLimit: RateLimitService,
+    private readonly push: PushService,
   ) {}
 
   @SubscribeMessage('call:invite')
@@ -65,6 +67,7 @@ export class CallGateway {
       setTimeout(() => this.finish(room, 'no_answer'), RING_TIMEOUT_MS),
     );
     this.server.to(partner.socketId).emit('call:incoming', { roomId: room.id });
+    this.push.nudge(partner.socketId, 'call');
     return { ok: true };
   }
 

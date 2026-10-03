@@ -30,6 +30,7 @@ import {
 } from '../matchmaking/matchmaking.service';
 import { MusicService } from '../music/music.service';
 import { PromptsService } from '../prompts/prompts.service';
+import { PushService } from '../push/push.service';
 import { ReactionsService } from '../reactions/reactions.service';
 import { ReportsService } from '../reports/reports.service';
 import { StatsService } from '../stats/stats.service';
@@ -73,6 +74,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     private readonly games: GamesService,
     private readonly followup: FollowupService,
     private readonly reports: ReportsService,
+    private readonly push: PushService,
     private readonly reactions: ReactionsService,
     private readonly calls: CallService,
     private readonly rateLimit: RateLimitService,
@@ -109,7 +111,9 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       voice: VOICE_ENABLED,
       block: this.users.enabled && identity !== null,
       report: this.reports.enabled && identity !== null,
+      push: identity ? this.push.publicKey : null,
     });
+    if (identity) this.push.track(client.id, identity.userHash);
     if (this.cancelPendingClose(client.id))
       this.notifyPresence(client.id, false);
     this.broadcastStats();
@@ -117,12 +121,15 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   handleDisconnect(client: Socket) {
     this.rateLimit.forget(client.id);
+    this.push.setAway(client.id, true);
     this.feedbackOpen.delete(client.id);
+    if (!this.matchmaking.roomOf(client.id)) this.push.forget(client.id);
     if (this.matchmaking.roomOf(client.id)) {
       this.notifyPresence(client.id, true);
       this.pendingClose.set(
         client.id,
         setTimeout(() => {
+          this.push.forget(client.id);
           this.closeRoomOf(client.id);
           this.broadcastStats();
         }, RECONNECT_GRACE_MS),
@@ -257,6 +264,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     this.followup.note(client.id, message.id, message.text);
     this.stats.count('message');
     this.server.to(partner.socketId).emit('chat:message', message);
+    this.push.nudge(partner.socketId, 'message');
     return { ok: true, message };
   }
 
@@ -292,6 +300,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   private notifyOwner(room: Room, guestPreferenceMet: boolean) {
     if (!room.guest) return;
+    this.push.nudge(room.owner.socketId, 'match');
     this.server
       .to(room.owner.socketId)
       .emit(

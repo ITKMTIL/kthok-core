@@ -7,6 +7,7 @@ import { GamesModule } from '../games/games.module';
 import { MatchmakingModule } from '../matchmaking/matchmaking.module';
 import { MusicModule } from '../music/music.module';
 import { PromptsModule } from '../prompts/prompts.module';
+import { PushModule } from '../push/push.module';
 import { ReactionsModule } from '../reactions/reactions.module';
 import { ReportsModule } from '../reports/reports.module';
 import { UsersModule } from '../users/users.module';
@@ -22,6 +23,7 @@ import { ChatGateway } from './chat.gateway';
     MatchmakingModule,
     MusicModule,
     PromptsModule,
+    PushModule,
     RateLimitModule,
     ReactionsModule,
     ReportsModule,

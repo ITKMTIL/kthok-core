@@ -16,10 +16,11 @@ model User {
   createdAt   DateTime  @default(now()) @map("created_at")
   lastSeenAt  DateTime  @default(now()) @map("last_seen_at")
 
-  blocksMade      Block[]  @relation("blocker")
-  blocksReceived  Block[]  @relation("blocked")
-  reportsMade     Report[] @relation("reporter")
-  reportsReceived Report[] @relation("reported")
+  blocksMade        Block[]            @relation("blocker")
+  blocksReceived    Block[]            @relation("blocked")
+  reportsMade       Report[]           @relation("reporter")
+  reportsReceived   Report[]           @relation("reported")
+  pushSubscriptions PushSubscription[]
 
   @@map("users")
 }
@@ -66,4 +67,18 @@ model Report {
   @@index([reportedId, createdAt])
   @@index([expiresAt])
   @@map("reports")
+}
+
+model PushSubscription {
+  id        Int      @id @default(autoincrement())
+  userId    Int      @map("user_id")
+  endpoint  String   @unique
+  p256dh    String
+  auth      String
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("push_subscriptions")
 }

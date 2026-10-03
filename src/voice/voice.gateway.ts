@@ -16,6 +16,7 @@ import { fail } from '../common/utils/ack';
 import { VOICE_ENABLED } from '../config/features';
 import { GATEWAY_OPTIONS } from '../config/gateway';
 import { MatchmakingService } from '../matchmaking/matchmaking.service';
+import { PushService } from '../push/push.service';
 import { ReactionsService } from '../reactions/reactions.service';
 import { StatsService } from '../stats/stats.service';
 import { detectAudioMime, readPeaks, toBuffer } from './utils/audio';
@@ -37,6 +38,7 @@ export class VoiceGateway {
     private readonly calls: CallService,
     private readonly stats: StatsService,
     private readonly rateLimit: RateLimitService,
+    private readonly push: PushService,
   ) {}
 
   @SubscribeMessage('voice:send')
@@ -84,6 +86,7 @@ export class VoiceGateway {
     this.server
       .to(partner.socketId)
       .emit('voice:message', { ...message, mime, audio });
+    this.push.nudge(partner.socketId, 'message');
     return { ok: true, message: { ...message, mime } };
   }
 }

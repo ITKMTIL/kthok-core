@@ -13,6 +13,7 @@ import {
 import { fail } from '../common/utils/ack';
 import { hasBannedWords } from '../common/utils/word-filter';
 import { GATEWAY_OPTIONS } from '../config/gateway';
+import { PushService } from '../push/push.service';
 import { isReportReason, ReportsService } from '../reports/reports.service';
 import { StatsService } from '../stats/stats.service';
 import { FollowupService } from './followup.service';
@@ -37,6 +38,7 @@ export class FollowupGateway {
     private readonly reports: ReportsService,
     private readonly rateLimit: RateLimitService,
     private readonly stats: StatsService,
+    private readonly push: PushService,
   ) {}
 
   @SubscribeMessage('room:keep')
@@ -75,6 +77,7 @@ export class FollowupGateway {
       this.server
         .to(record.partnerSocketId)
         .emit('room:keep-offered', { roomId: record.roomId });
+      this.push.nudge(record.partnerSocketId, 'keep');
     }
     return { ok: true, mutual: false };
   }
