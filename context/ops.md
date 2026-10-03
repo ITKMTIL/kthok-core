@@ -29,3 +29,8 @@
 - ห้ามเปิดเพลง YouTube ในเทส
 - เทสที่ต้องมี auth + DB (report, block, push, admin): `pnpm exec prisma dev --name kthoktest --detach` → migrate deploy → รัน `/tmp/kthok-test/core/main.js` เองด้วย `GOOGLE_CLIENT_ID=test.apps SESSION_SECRET=testsecret DATABASE_URL=<url>&pgbouncer=true&connection_limit=1` แล้วสร้าง token ด้วย `sealSession({v:2, sub: HMAC(secret, studentId), faculty, exp}, secret)` จาก dist; จบแล้ว `prisma dev stop/rm kthoktest`
 - check: `pnpm exec tsc --noEmit -p tsconfig.json && pnpm exec eslint src`
+
+## เทส push แบบ end-to-end
+
+`.claude/scripts/push-e2e.cjs` จำลอง push service ด้วย HTTPS ในเครื่อง (port 8443) และถอดรหัส payload ด้วย `http_ece` ขั้นตอน: สร้าง cert self-signed ที่ `/tmp/kthok-test/{key,cert}.pem`, `prisma dev` + migrate, build core ไป `/tmp/kthok-test/core` แล้วรันด้วย `GOOGLE_CLIENT_ID=test.apps SESSION_SECRET=testsecret DATABASE_URL=... VAPID_*=<คู่ใหม่> CALL_MIN_MESSAGES=1 PUSH_THROTTLE_MS=2000 NODE_TLS_REJECT_UNAUTHORIZED=0` แล้วรันสคริปต์ด้วย `NODE_PATH=<client>/node_modules:<core>/node_modules/.pnpm/http_ece@1.2.0/node_modules node .claude/scripts/push-e2e.cjs` (15 ข้อต้อง PASS)
+- อย่าเปิดอ่าน terminal ของเจ้าของตอนที่อาจมี secret (เช่นหลัง generate-vapid-keys) — เคยเผลอเห็น private key มาแล้ว
