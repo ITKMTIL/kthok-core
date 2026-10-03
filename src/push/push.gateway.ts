@@ -47,9 +47,11 @@ export class PushGateway {
     }
     const subscription = readSubscription(body?.subscription);
     if (!subscription) return fail('invalid_subscription');
-    return (await this.push.subscribe(identity.userHash, subscription))
-      ? { ok: true }
-      : fail('unavailable');
+    if (!(await this.push.subscribe(identity.userHash, subscription))) {
+      return fail('unavailable');
+    }
+    this.push.attach(client.id, subscription.endpoint);
+    return { ok: true };
   }
 
   @SubscribeMessage('push:unsubscribe')
@@ -61,6 +63,7 @@ export class PushGateway {
     const endpoint = body?.endpoint;
     if (!identity || typeof endpoint !== 'string') return fail('invalid');
     await this.push.unsubscribe(identity.userHash, endpoint);
+    this.push.attach(client.id, null);
     return { ok: true };
   }
 }

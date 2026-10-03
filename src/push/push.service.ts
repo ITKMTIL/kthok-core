@@ -10,7 +10,7 @@ export interface PushSubscriptionInput {
   auth: string;
 }
 
-const THROTTLE_MS = 30_000;
+const THROTTLE_MS = Number(process.env.PUSH_THROTTLE_MS ?? 30_000);
 const TTL_SECONDS = 120;
 const MAX_ENDPOINT_LENGTH = 1000;
 const MAX_KEY_LENGTH = 200;
@@ -22,6 +22,7 @@ const SUBJECT = process.env.VAPID_SUBJECT || 'mailto:admin@example.com';
 interface Presence {
   hash: string;
   away: boolean;
+  endpoint: string | null;
 }
 
 export function readSubscription(value: unknown): PushSubscriptionInput | null {
@@ -66,12 +67,22 @@ export class PushService {
   }
 
   track(socketId: string, hash: string) {
-    this.presence.set(socketId, { hash, away: false });
+    const previous = this.presence.get(socketId);
+    this.presence.set(socketId, {
+      hash,
+      away: false,
+      endpoint: previous?.hash === hash ? previous.endpoint : null,
+    });
   }
 
   setAway(socketId: string, away: boolean) {
     const entry = this.presence.get(socketId);
     if (entry) entry.away = away;
+  }
+
+  attach(socketId: string, endpoint: string | null) {
+    const entry = this.presence.get(socketId);
+    if (entry) entry.endpoint = endpoint;
   }
 
   forget(socketId: string) {
@@ -111,17 +122,22 @@ export class PushService {
 
   nudge(socketId: string, kind: PushKind, now = Date.now()) {
     const entry = this.presence.get(socketId);
-    if (!this.enabled || !entry?.away) return;
-    const key = `${entry.hash}:${kind}`;
+    if (!this.enabled || !entry?.away || !entry.endpoint) return;
+    const key = `${entry.endpoint}:${kind}`;
     if (now - (this.lastSent.get(key) ?? 0) < THROTTLE_MS) return;
     this.lastSent.set(key, now);
-    void this.send(entry.hash, kind);
+    if (this.lastSent.size > 5_000) {
+      for (const [sentKey, at] of this.lastSent) {
+        if (now - at >= THROTTLE_MS) this.lastSent.delete(sentKey);
+      }
+    }
+    void this.send(entry.hash, entry.endpoint, kind);
   }
 
-  private async send(hash: string, kind: PushKind) {
+  private async send(hash: string, endpoint: string, kind: PushKind) {
     try {
       const subscriptions = await this.prisma.pushSubscription.findMany({
-        where: { user: { hash } },
+        where: { endpoint, user: { hash } },
       });
       await Promise.all(
         subscriptions.map(async (subscription) => {
