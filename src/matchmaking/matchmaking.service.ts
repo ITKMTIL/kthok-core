@@ -7,6 +7,7 @@ export interface Participant {
   nickname: string;
   faculty: FacultyId;
   userHash: string | null;
+  admin: boolean;
   avoid: Set<string>;
 }
 
@@ -143,7 +144,7 @@ export class MatchmakingService {
 }
 
 function canPair(a: Participant, b: Participant): boolean {
-  if (a.userHash !== null && a.userHash === b.userHash) return false;
+  if (a.userHash !== null && a.userHash === b.userHash) return a.admin;
   return !(
     (b.userHash !== null && a.avoid.has(b.userHash)) ||
     (a.userHash !== null && b.avoid.has(a.userHash))

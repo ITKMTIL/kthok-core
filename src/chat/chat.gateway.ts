@@ -135,6 +135,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       nickname,
       faculty,
       userHash: identity?.userHash ?? null,
+      admin: identity ? this.users.isAdmin(identity.userHash) : false,
       avoid,
     };
     if (prefers !== null) this.stats.count('preference_requested', prefers);
@@ -174,6 +175,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     if (!room?.guest || !partner) return fail('not_in_chat');
     const self = room.owner.socketId === client.id ? room.owner : room.guest;
     if (!self.userHash || !partner.userHash) return fail('unavailable');
+    if (self.userHash === partner.userHash) return fail('unavailable');
     if (!this.allow(client, 'block')) return fail('rate_limited');
     if (!(await this.users.block(self.userHash, partner.userHash))) {
       return fail('unavailable');
