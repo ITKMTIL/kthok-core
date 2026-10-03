@@ -37,13 +37,26 @@ function loosePattern(word: string): string {
     .join(SEPARATORS);
 }
 
-const BANNED = new RegExp(
-  [
-    ...BANNED_THAI.map(loosePattern),
-    ...BANNED_LATIN.map((word) => `(?<![a-z])${loosePattern(word)}(?![a-z])`),
-  ].join('|'),
-  'giu',
-);
+export const DEFAULT_BANNED_WORDS: readonly string[] = [
+  ...BANNED_THAI,
+  ...BANNED_LATIN,
+];
+
+function patternFor(word: string): string {
+  return /^[a-z]+$/.test(word)
+    ? `(?<![a-z])${loosePattern(word)}(?![a-z])`
+    : loosePattern(word);
+}
+
+function compile(words: readonly string[]): RegExp {
+  return new RegExp(words.map(patternFor).join('|'), 'giu');
+}
+
+let BANNED = compile(DEFAULT_BANNED_WORDS);
+
+export function setExtraBannedWords(words: readonly string[]) {
+  BANNED = compile([...DEFAULT_BANNED_WORDS, ...words]);
+}
 
 export function maskBannedWords(text: string): string {
   return text.replace(INVISIBLE, '').replace(BANNED, MASK);

@@ -2,6 +2,7 @@ import {
   BadRequestException,
   Body,
   Controller,
+  Delete,
   ForbiddenException,
   Get,
   Headers,
@@ -16,6 +17,10 @@ import {
 } from '@nestjs/common';
 import { AuthService } from '../auth/auth.service';
 import { MatchmakingService } from '../matchmaking/matchmaking.service';
+import {
+  normalizeWord,
+  WordListService,
+} from '../moderation/word-list.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { ReportsService } from '../reports/reports.service';
 import { StatsService } from '../stats/stats.service';
@@ -35,6 +40,7 @@ export class AdminController {
     private readonly matchmaking: MatchmakingService,
     private readonly prisma: PrismaService,
     private readonly reports: ReportsService,
+    private readonly words: WordListService,
   ) {}
 
   private authorize(authorization: string | undefined) {
@@ -92,6 +98,37 @@ export class AdminController {
     const result = await this.reports.resolve(id, action, ban);
     if (!result) throw new NotFoundException('report_not_found');
     if (result.bannedHash) this.users.notifyBan(result.bannedHash);
+    return { ok: true };
+  }
+
+  @Get('words')
+  async listWords(@Headers('authorization') authorization: string | undefined) {
+    this.authorize(authorization);
+    return this.words.list();
+  }
+
+  @Post('words')
+  @HttpCode(200)
+  async addWord(
+    @Headers('authorization') authorization: string | undefined,
+    @Body() body: Record<string, unknown> | undefined,
+  ) {
+    this.authorize(authorization);
+    const word = normalizeWord(body?.word);
+    if (!word) throw new BadRequestException('invalid_word');
+    await this.words.add(word);
+    return { ok: true };
+  }
+
+  @Delete('words/:id')
+  async removeWord(
+    @Headers('authorization') authorization: string | undefined,
+    @Param('id', ParseIntPipe) id: number,
+  ) {
+    this.authorize(authorization);
+    if (!(await this.words.remove(id))) {
+      throw new NotFoundException('word_not_found');
+    }
     return { ok: true };
   }
 
