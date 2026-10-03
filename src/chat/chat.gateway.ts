@@ -12,6 +12,7 @@ import { Server, Socket } from 'socket.io';
 import { AuthService, Identity } from '../auth/auth.service';
 import { CallService } from '../call/call.service';
 import { isFacultyId } from '../common/constants/faculties';
+import { isStickerId } from '../common/constants/stickers';
 import { DEFAULT_TOPIC, isTopicId } from '../common/constants/topics';
 import {
   RateLimit,
@@ -50,6 +51,8 @@ const LIMITS = {
   message: { max: 5, windowMs: 3_000 },
   typing: { max: 10, windowMs: 5_000 },
   block: { max: 5, windowMs: 60_000 },
+  unsend: { max: 10, windowMs: 60_000 },
+  read: { max: 30, windowMs: 10_000 },
 } satisfies Record<string, RateLimit>;
 
 interface ClientData {
@@ -246,26 +249,75 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     @ConnectedSocket() client: Socket,
     @MessageBody() body: Record<string, unknown> | undefined,
   ) {
+    const sticker = body?.sticker;
     const raw = typeof body?.text === 'string' ? body.text.trim() : '';
-    if (!raw || raw.length > MAX_MESSAGE_LENGTH) return fail('invalid_text');
+    if (sticker !== undefined) {
+      if (!isStickerId(sticker)) return fail('invalid_sticker');
+    } else if (!raw || raw.length > MAX_MESSAGE_LENGTH) {
+      return fail('invalid_text');
+    }
 
     const room = this.matchmaking.activeRoomOf(client.id);
     const partner = room && this.matchmaking.partnerOf(room, client.id);
     if (!room || !partner) return fail('not_in_chat');
+    const replyTo =
+      typeof body?.replyTo === 'string' &&
+      this.followup.has(client.id, body.replyTo)
+        ? body.replyTo
+        : undefined;
     if (!this.allow(client, 'message')) return fail('rate_limited');
 
     const message = {
       id: randomUUID(),
-      text: maskBannedWords(raw),
+      text: sticker === undefined ? maskBannedWords(raw) : '',
       at: Date.now(),
+      ...(sticker === undefined ? {} : { sticker }),
+      ...(replyTo ? { replyTo } : {}),
     };
     this.reactions.track(room.id, message.id);
     this.calls.noteMessage(room.id);
-    this.followup.note(client.id, message.id, message.text);
-    this.stats.count('message');
+    this.followup.note(
+      client.id,
+      message.id,
+      sticker === undefined ? message.text : null,
+    );
+    this.stats.count(sticker === undefined ? 'message' : 'sticker');
     this.server.to(partner.socketId).emit('chat:message', message);
     this.push.nudge(partner.socketId, 'message');
     return { ok: true, message };
+  }
+
+  @SubscribeMessage('chat:unsend')
+  unsend(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() body: Record<string, unknown> | undefined,
+  ) {
+    const room = this.matchmaking.activeRoomOf(client.id);
+    const partner = room && this.matchmaking.partnerOf(room, client.id);
+    if (!room || !partner) return fail('not_in_chat');
+    if (!this.allow(client, 'unsend')) return fail('rate_limited');
+    const messageId = body?.messageId;
+    if (typeof messageId !== 'string') return fail('invalid_message');
+    if (!this.followup.unsend(client.id, messageId)) return fail('too_late');
+    this.server
+      .to(partner.socketId)
+      .emit('chat:unsent', { roomId: room.id, messageId });
+    return { ok: true };
+  }
+
+  @SubscribeMessage('chat:read')
+  read(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() body: Record<string, unknown> | undefined,
+  ) {
+    const partner = this.matchmaking.activePartnerOf(client.id);
+    const messageId = body?.messageId;
+    if (!partner || typeof messageId !== 'string') return;
+    if (!this.allow(client, 'read')) return;
+    if (this.followup.senderOf(client.id, messageId) !== partner.socketId) {
+      return;
+    }
+    this.server.to(partner.socketId).emit('chat:read', { messageId });
   }
 
   @SubscribeMessage('chat:typing')

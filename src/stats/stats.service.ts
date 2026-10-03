@@ -13,6 +13,7 @@ export type Metric =
   | 'preference_met'
   | 'message'
   | 'voice'
+  | 'sticker'
   | 'call'
   | 'room'
   | 'room_seconds'

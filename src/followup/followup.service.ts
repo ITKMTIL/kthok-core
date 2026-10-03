@@ -5,8 +5,16 @@ import { Room } from '../matchmaking/matchmaking.service';
 export const FOLLOWUP_MS = Number(process.env.FOLLOWUP_MS ?? 10 * 60_000);
 const MAX_DIGESTS = 300;
 
+export const UNSEND_WINDOW_MS = 60_000;
+
+interface TrailEntry {
+  digest: string | null;
+  sender: string;
+  at: number;
+}
+
 interface Trail {
-  digests: Map<string, { digest: string; sender: string }>;
+  digests: Map<string, TrailEntry>;
 }
 
 export interface Followup {
@@ -58,15 +66,45 @@ export class FollowupService implements OnModuleDestroy {
     }
   }
 
-  note(socketId: string, messageId: string, text: string) {
+  note(
+    socketId: string,
+    messageId: string,
+    text: string | null,
+    now = Date.now(),
+  ) {
     const record = this.records.get(socketId);
     if (!record || record.endedAt !== null) return;
     const { digests } = record.trail;
-    digests.set(messageId, { digest: this.digest(text), sender: socketId });
+    digests.set(messageId, {
+      digest: text === null ? null : this.digest(text),
+      sender: socketId,
+      at: now,
+    });
     if (digests.size > MAX_DIGESTS) {
       const [oldest] = digests.keys();
       digests.delete(oldest);
     }
+  }
+
+  has(socketId: string, messageId: string): boolean {
+    const record = this.records.get(socketId);
+    return Boolean(record?.trail.digests.has(messageId));
+  }
+
+  senderOf(socketId: string, messageId: string): string | null {
+    return (
+      this.records.get(socketId)?.trail.digests.get(messageId)?.sender ?? null
+    );
+  }
+
+  unsend(socketId: string, messageId: string, now = Date.now()): boolean {
+    const record = this.records.get(socketId);
+    if (!record || record.endedAt !== null) return false;
+    const entry = record.trail.digests.get(messageId);
+    if (!entry || entry.sender !== socketId) return false;
+    if (now - entry.at > UNSEND_WINDOW_MS) return false;
+    record.trail.digests.delete(messageId);
+    return true;
   }
 
   end(roomId: string, now = Date.now()) {
@@ -99,7 +137,9 @@ export class FollowupService implements OnModuleDestroy {
     const evidence: Evidence[] = [];
     for (const message of messages) {
       const entry = record.trail.digests.get(message.id);
-      if (!entry || entry.digest !== this.digest(message.text)) return null;
+      if (!entry?.digest || entry.digest !== this.digest(message.text)) {
+        return null;
+      }
       evidence.push({
         fromReported: entry.sender === record.partnerSocketId,
         text: message.text,

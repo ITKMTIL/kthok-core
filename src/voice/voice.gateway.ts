@@ -16,6 +16,7 @@ import { fail } from '../common/utils/ack';
 import { VOICE_ENABLED } from '../config/features';
 import { GATEWAY_OPTIONS } from '../config/gateway';
 import { MatchmakingService } from '../matchmaking/matchmaking.service';
+import { FollowupService } from '../followup/followup.service';
 import { PushService } from '../push/push.service';
 import { ReactionsService } from '../reactions/reactions.service';
 import { StatsService } from '../stats/stats.service';
@@ -39,6 +40,7 @@ export class VoiceGateway {
     private readonly stats: StatsService,
     private readonly rateLimit: RateLimitService,
     private readonly push: PushService,
+    private readonly followup: FollowupService,
   ) {}
 
   @SubscribeMessage('voice:send')
@@ -82,6 +84,7 @@ export class VoiceGateway {
     };
     this.reactions.track(room.id, message.id);
     this.calls.noteMessage(room.id);
+    this.followup.note(client.id, message.id, null);
     this.stats.count('voice');
     this.server
       .to(partner.socketId)
