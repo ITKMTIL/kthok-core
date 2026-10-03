@@ -20,6 +20,7 @@ import {
 import {
   Game,
   GamesService,
+  isBirthDay,
   isGameType,
   isRpsChoice,
   viewOf,
@@ -84,6 +85,16 @@ export class GamesGateway {
     } else if (current?.type === 'rps') {
       if (!isRpsChoice(body?.choice)) return fail('invalid_move');
       game = this.games.playRps(pair.room.id, client.id, body.choice);
+    } else if (current?.type === 'taksa') {
+      if (!isBirthDay(body?.day)) return fail('invalid_move');
+      game = this.games.pickDay(
+        pair.room.id,
+        client.id,
+        body.day,
+        body?.reveal === true,
+      );
+    } else if (current?.type === 'tarot') {
+      game = this.games.draw(pair.room.id, client.id);
     }
     if (!game) return fail('invalid_move');
     this.broadcast(pair.room, game);
