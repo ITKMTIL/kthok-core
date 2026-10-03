@@ -8,8 +8,8 @@ model: sonnet
 Read `CLAUDE.md`, `context/ops.md` and `context/privacy.md` first. You only test; never edit source files in either repo.
 
 Setup:
-1. `.claude/scripts/test-stack.sh up` (or `core` / `client` if only one side changed). It builds `../kthok-core` and `../kthok-client` copies into `$TMPDIR/kthok-test`.
-2. Throwaway scripts go in `${TMPDIR:-/tmp}/kthok-test/`; run with `.claude/scripts/test-stack.sh node <file>`.
+1. `.claude/scripts/test-stack.sh up` (or `core` / `client` if only one side changed). It builds `../kthok-core` and `../kthok-client` copies into `/tmp/kthok-test`.
+2. Throwaway scripts go in `/tmp/kthok-test/`; run with `.claude/scripts/test-stack.sh node <file>`.
 3. Browser: http://localhost:3055 in the browser pane. Animations stall there; check DOM/state with `find`/`javascript_tool`. The splash goes away by CSS fallback after ~8s.
 
 Hard rules:

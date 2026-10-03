@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../../.." && pwd)"
 CORE="$ROOT/kthok-core"
 CLIENT="$ROOT/kthok-client"
-WORK="${KTHOK_TEST_DIR:-${TMPDIR:-/tmp}/kthok-test}"
+WORK="${KTHOK_TEST_DIR:-/tmp/kthok-test}"
 CORE_PORT=3056
 CLIENT_PORT=3055
 

@@ -22,8 +22,8 @@
 .claude/scripts/test-stack.sh node script.cjs
 ```
 
-- core 3056 build ไป `$TMPDIR/kthok-test/core`, ส่ง `GOOGLE_CLIENT_ID=` `DATABASE_URL=` ว่างตรง ๆ (Prisma อ่าน `.env` เอง)
+- core 3056 build ไป `/tmp/kthok-test/core`, ส่ง `GOOGLE_CLIENT_ID=` `DATABASE_URL=` ว่างตรง ๆ (Prisma อ่าน `.env` เอง)
 - partner จำลอง = socket.io-client script (`node` subcommand ใช้ deps ของ client), faculty id เช่น `engineering`
 - ห้ามเปิดเพลง YouTube ในเทส
-- เทสที่ต้องมี auth + DB (report, block, push, admin): `pnpm exec prisma dev --name kthoktest --detach` → migrate deploy → รัน `$TMPDIR/kthok-test/core/main.js` เองด้วย `GOOGLE_CLIENT_ID=test.apps SESSION_SECRET=testsecret DATABASE_URL=<url>&pgbouncer=true&connection_limit=1` แล้วสร้าง token ด้วย `sealSession({v:2, sub: HMAC(secret, studentId), faculty, exp}, secret)` จาก dist; จบแล้ว `prisma dev stop/rm kthoktest`
+- เทสที่ต้องมี auth + DB (report, block, push, admin): `pnpm exec prisma dev --name kthoktest --detach` → migrate deploy → รัน `/tmp/kthok-test/core/main.js` เองด้วย `GOOGLE_CLIENT_ID=test.apps SESSION_SECRET=testsecret DATABASE_URL=<url>&pgbouncer=true&connection_limit=1` แล้วสร้าง token ด้วย `sealSession({v:2, sub: HMAC(secret, studentId), faculty, exp}, secret)` จาก dist; จบแล้ว `prisma dev stop/rm kthoktest`
 - check: `pnpm exec tsc --noEmit -p tsconfig.json && pnpm exec eslint src`
