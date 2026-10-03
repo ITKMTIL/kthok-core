@@ -19,6 +19,20 @@ services:
       timeout: 3s
       retries: 10
 
+  migrate:
+    image: ${CORE_IMAGE:-kthok-core}-migrate:${TAG:-latest}
+    platform: linux/amd64
+    build:
+      context: .
+      target: migrate
+      platforms:
+        - linux/amd64
+    environment:
+      DATABASE_URL: postgresql://kthok:${POSTGRES_PASSWORD:-kthok}@db:5432/kthok
+    depends_on:
+      db:
+        condition: service_healthy
+
   core:
     image: ${CORE_IMAGE:-kthok-core}:${TAG:-latest}
     platform: linux/amd64
@@ -36,8 +50,8 @@ services:
     ports:
       - "3001:3001"
     depends_on:
-      db:
-        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
 
   client:
     image: ${CLIENT_IMAGE:-kthok-client}:${TAG:-latest}

@@ -124,10 +124,18 @@ image ทั้งหมด build สำหรับ `linux/amd64`
 ./scripts/build-image.sh
 ```
 
-ตั้งชื่อและ tag ได้ด้วยตัวแปร เช่น `IMAGE=registry.example.com/kthok-core TAG=1.0.0 PUSH=1 ./scripts/build-image.sh`
-container จะรัน `prisma migrate deploy` ให้เองตอนเริ่ม ถ้ามี `DATABASE_URL`
+ได้ 2 image:
 
-`docker-compose.yml` รวม Postgres, core และ client ไว้ด้วยกัน โดยคาดว่า clone `kthok-client` ไว้ข้าง ๆ repo นี้:
+| image | ขนาดโดยประมาณ | ใช้ทำอะไร |
+| --- | --- | --- |
+| `kthok-core` | ~300MB | ตัว server มีแค่ dependency ที่ใช้ตอนรัน (ตัด Prisma CLI, TypeScript และไฟล์ wasm ที่ไม่ได้ใช้ออก) |
+| `kthok-core-migrate` | ~1GB | รัน `prisma migrate deploy` ครั้งเดียวแล้วจบ ใช้ก่อนเริ่ม server ทุกครั้งที่มี migration ใหม่ |
+
+ตั้งชื่อและ tag ได้ด้วยตัวแปร เช่น `IMAGE=registry.example.com/kthok-core TAG=1.0.0 PUSH=1 ./scripts/build-image.sh`
+
+ถ้าไม่ได้ใช้ compose ให้รัน migrate เองก่อน: `docker run --rm -e DATABASE_URL=... kthok-core-migrate`
+
+`docker-compose.yml` รวม Postgres, migrate, core และ client ไว้ด้วยกัน (core รอให้ migrate จบก่อน) โดยคาดว่า clone `kthok-client` ไว้ข้าง ๆ repo นี้:
 
 ```bash
 docker compose build
