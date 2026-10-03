@@ -39,7 +39,7 @@ export class PromptsGateway {
 
     const prompt = {
       id: randomUUID(),
-      text: this.prompts.next(room.id, room.topic),
+      key: this.prompts.next(room.id, room.topic),
       at: Date.now(),
     };
     this.server
