@@ -21,9 +21,16 @@ repo นี้คือ server (NestJS + socket.io) ทำหน้าที่�
 
 - **จับคู่แบบบังคับ** — มีห้องรออยู่ก็เข้าเลย ไม่มีก็เปิดห้องใหม่ ห้องละ 2 คน
 - **เลือกคณะ** — ผู้ใช้ขอคณะที่อยากคุยด้วยได้ ถ้าไม่มีจะรอ `PREFERENCE_GRACE_MS` แล้วย้ายไปห้องว่างอื่น
+- **ห้องตามหัวข้อ** — คุยทั่วไป / ติวสอบ / เกม / อยากระบาย / หาเพื่อนกินข้าว จับคู่เฉพาะหัวข้อเดียวกัน และบอก lobby ว่าคณะ/หัวข้อไหนมีคนรอ (ไม่บอกจำนวน)
+- **ไม่จับคู่ซ้ำทันที** — จำคู่ล่าสุด 3 คน จะกลับมาเจอกันได้ก็ต่อเมื่อรอเกินช่วง grace แล้วไม่มีคนอื่น
+- **หน่วงคนป่วน** — ถูกบล็อกหรือรายงานใน 7 วันตั้งแต่ 3 ครั้ง ต้องรอ 30 วินาทีก่อนจับคู่ (6 ครั้งขึ้นไป 90 วินาที)
 - **ล็อกอินด้วย Google** — รับเฉพาะอีเมลนักศึกษา ดึงคณะจากรหัสนักศึกษา แล้วออก session token แบบเข้ารหัส (AES-256-GCM)
 - **แชต** — ส่งต่อข้อความ สถานะกำลังพิมพ์ รีแอคชัน พร้อมกรองคำหยาบและจำกัดความถี่
 - **คิวเพลง YouTube** ต่อห้อง — server ถือสถานะเพลง ทุกคนในห้องเห็นตรงกัน
+- **คำถามชวนคุยและมินิเกม** — สุ่มคำถามธีม สจล. ตามหัวข้อห้อง, XO และเป่ายิ้งฉุบ โดย server ถือ state
+- **อยากคุยต่อ** — หลังจบห้อง 10 นาที ถ้ากดทั้งคู่ server ส่ง contact ที่แต่ละคนพิมพ์ให้กัน ไม่เก็บไว้
+- **รายงาน** — ผู้ใช้เลือกข้อความแนบได้ server ตรวจกับลายเซ็น (HMAC) ของข้อความที่ส่งจริงในห้อง เก็บแบบเข้ารหัส ลบเองใน 30 วัน admin ตรวจและระงับบัญชีได้ คนที่ถูกระงับหลุดทันที
+- **Push notification** — เตือนเมื่อจับคู่ได้ มีข้อความ สายเรียกเข้า หรือมีคนอยากคุยต่อ ตอนแท็บถูกซ่อน ส่งแค่ชนิดเหตุการณ์ ไม่ส่งเนื้อหา
 - **ข้อความเสียง** — ส่งต่อไฟล์เสียงไม่เกิน 60 วินาทีให้อีกฝ่าย ตรวจชนิดไฟล์และขนาดก่อน ไม่เก็บไฟล์ไว้
 - **สัญญาณโทรเสียง** — ส่งต่อ offer/answer/ICE ของ WebRTC และออก credential TURN อายุสั้น
 - **รอการกลับมา** — socket หลุดแล้วห้องยังอยู่ช่วงหนึ่ง กลับมาทันก็คุยต่อได้
@@ -33,7 +40,9 @@ repo นี้คือ server (NestJS + socket.io) ทำหน้าที่�
 ### ความเป็นส่วนตัว
 
 - สถานะห้อง ข้อความ คิวเพลง และสายโทรอยู่ใน memory เท่านั้น restart แล้วหายหมด
-- ไม่เก็บเนื้อหาข้อความ เก็บแค่ id ของข้อความล่าสุดใน memory เพื่อให้รีแอคชันทำงาน
+- ไม่เก็บเนื้อหาข้อความ เก็บแค่ id และ HMAC ของข้อความใน memory (เพื่อรีแอคชันและตรวจหลักฐานตอนรายงาน) ลบเมื่อห้องจบเกิน 10 นาที
+- ข้อความจะถูกเก็บก็ต่อเมื่อผู้ใช้เลือกแนบตอนรายงานเท่านั้น (เข้ารหัส, ลบใน 30 วัน)
+- contact ของ "อยากคุยต่อ" ผ่าน memory แล้วส่งต่อเมื่อกดทั้งคู่ ไม่ลงฐานข้อมูล
 - ไม่เก็บอีเมล รหัสนักศึกษา หรือนามแฝง
 - เสียงของการโทรไม่ผ่าน server นี้ ส่วนข้อความเสียงผ่านแค่ memory แล้วส่งต่อทันที
 
@@ -44,6 +53,8 @@ repo นี้คือ server (NestJS + socket.io) ทำหน้าที่�
 | `users` | HMAC ของรหัสนักศึกษา (ย้อนกลับไม่ได้), คณะ, เวลาใช้งานล่าสุด, วันที่ถูกระงับ | ระงับบัญชี นับผู้ใช้ |
 | `blocks` | คู่ของผู้ใช้ที่บล็อกกัน | ไม่จับคู่ซ้ำ |
 | `daily_stats` | ยอดรวมรายวันต่อ metric และคณะ | รายงานการใช้งาน |
+| `reports` | ผู้รายงาน/ผู้ถูกรายงาน (id ภายใน), เหตุผล, หลักฐานที่เข้ารหัส, สถานะ, วันหมดอายุ 30 วัน | ให้ admin ตรวจ |
+| `push_subscriptions` | endpoint และ key ของ push ที่ผู้ใช้เปิดเอง ผูกกับ users | ส่งแจ้งเตือน ลบเมื่อปิดหรือ endpoint หมดอายุ |
 
 ## เทคโนโลยี
 
@@ -72,7 +83,7 @@ echo 'DATABASE_URL=postgresql://kthok:kthok@localhost:5432/kthok' >> .env
 pnpm exec prisma migrate deploy
 ```
 
-การระงับบัญชียังไม่มีหน้าจัดการ ต้องตั้งค่า `banned_until` ในตาราง `users` เอง (เช่นผ่าน `pnpm exec prisma studio`)
+การระงับบัญชีทำจากหน้า `/admin` ของ client (ตรวจรายงาน → ระงับ 1/7/30 วันหรือถาวร, ยกฟ้อง, ปลดระงับ)
 
 ### ตัวแปรใน `.env`
 
@@ -92,6 +103,9 @@ pnpm exec prisma migrate deploy
 | `CALL_FORCE_RELAY` | `true` | ให้เสียงทุกสายผ่าน TURN เพื่อไม่ให้คู่สนทนาเห็น IP กัน |
 | `DATABASE_URL` | ว่าง | connection string ของ PostgreSQL เว้นว่าง = ไม่ใช้ฐานข้อมูล |
 | `USER_HASH_SECRET` | ว่าง | ค่าลับสำหรับทำ hash รหัสนักศึกษา เว้นว่าง = ใช้ `SESSION_SECRET` ห้ามเปลี่ยนหลังมีผู้ใช้แล้ว ไม่งั้นการบล็อกและการระงับจะหลุด |
+| `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY` | ว่าง | key ของ Web Push สร้างด้วย `pnpm exec web-push generate-vapid-keys` เว้นว่าง = ปิด push |
+| `VAPID_SUBJECT` | `mailto:admin@example.com` | ช่องทางติดต่อที่ส่งให้ push service |
+| `FOLLOWUP_MS` | `600000` | เวลาหลังจบห้องที่ยังกด "อยากคุยต่อ" หรือรายงานได้ |
 | `ADMIN_STUDENT_IDS` | ว่าง | รหัสนักศึกษาของ admin คั่นด้วย `,` ใช้เปิดหน้า dashboard และจับคู่กับบัญชีตัวเองได้ (เปิดสองแท็บเพื่อทดสอบ) |
 
 ### คำสั่ง
@@ -127,7 +141,7 @@ compose อ่านค่าจาก `.env` ของ repo นี้ ค่า
 
 ```
 src/
-  admin/         endpoint สรุปสถิติสำหรับ dashboard
+  admin/         endpoint สถิติ รายงาน และการระงับบัญชีสำหรับ dashboard
   auth/          ล็อกอิน Google, session token, แปลงรหัสนักศึกษาเป็นคณะ
   chat/          gateway หลัก: เชื่อมต่อ, จับคู่, ข้อความ, ปิดห้อง
   matchmaking/   logic จับคู่และจัดการห้อง
@@ -135,6 +149,11 @@ src/
   reactions/     รีแอคชันบนข้อความ
   call/          สัญญาณโทรและ credential TURN
   voice/         ส่งต่อข้อความเสียง
+  prompts/       คำถามชวนคุย
+  games/         XO และเป่ายิ้งฉุบ
+  followup/      หลังจบห้อง: อยากคุยต่อ และรายงาน
+  reports/       เก็บ/ตรวจรายงาน เข้ารหัสหลักฐาน ลบเมื่อหมดอายุ
+  push/          Web Push
   users/         ผู้ใช้แบบ hash, การระงับ, การบล็อก
   stats/         ตัวนับสถิติรายวัน
   prisma/        การเชื่อมต่อฐานข้อมูล
@@ -156,12 +175,17 @@ src/
 
 | กลุ่ม | จากหน้าเว็บ | จาก server |
 | --- | --- | --- |
-| จับคู่ | `match:find`, `room:leave`, `room:block`, `room:feedback` | `match:found`, `match:fallback`, `room:closed`, `partner:presence`, `stats` |
-| แชต | `chat:send`, `chat:typing`, `chat:react` | `chat:message`, `chat:typing`, `chat:reaction` |
+| จับคู่ | `match:find` (`topic`, `preferFaculty`), `room:leave`, `room:block`, `room:feedback` | `match:found`, `match:fallback`, `room:closed`, `partner:presence`, `stats` |
+| แชต | `chat:send`, `chat:typing`, `chat:react`, `chat:prompt` | `chat:message`, `chat:typing`, `chat:reaction`, `chat:prompt` |
+| เกม | `game:start`, `game:move`, `game:end` | `game:state` |
+| หลังจบห้อง | `room:keep`, `room:report` | `room:keep-offered`, `room:contact` |
+| แจ้งเตือน | `presence:visibility`, `push:subscribe`, `push:unsubscribe` | — |
 | เพลง | `music:add`, `music:play`, `music:pause`, `music:skip`, `music:remove` | `music:state` |
 | ข้อความเสียง | `voice:send` | `voice:message` |
 | โทร | `call:invite`, `call:accept`, `call:decline`, `call:end`, `call:signal`, `call:ice` | `call:incoming`, `call:accepted`, `call:ended`, `call:signal` |
 | ระบบ | — | `auth:ok`, `auth:error`, `auth:banned`, `features` |
+
+HTTP สำหรับ admin (Bearer session ของ admin): `GET /admin/overview?days=`, `GET /admin/reports?status=open|closed`, `POST /admin/reports/:id/resolve` (`{action: "dismiss"}` หรือ `{action: "ban", days: 1|7|30|null, reason}`), `POST /admin/users/:id/unban`
 
 ## Flow การทำงานของแต่ละฟีเจอร์
 
@@ -478,10 +502,61 @@ sequenceDiagram
 
 </details>
 
+<details>
+<summary><b>9. หลังจบห้อง: อยากคุยต่อ และรายงาน</b></summary>
+
+core จำห้องที่เพิ่งจบไว้ใน memory 10 นาที (`FOLLOWUP_MS`) พร้อม HMAC ของข้อความแต่ละอัน ไม่เก็บตัวข้อความ
+
+```mermaid
+sequenceDiagram
+  participant A as หน้าเว็บ A
+  participant C as core
+  participant B as หน้าเว็บ B
+  participant D as ฐานข้อมูล
+
+  Note over A,B: ห้องจบ (ใครกดออกก็ได้ ทั้งคู่เห็นหน้าจบห้อง)
+  A->>C: room:keep (contact ของ A)
+  C->>B: room:keep-offered
+  B->>C: room:keep (contact ของ B)
+  C->>A: room:contact (contact ของ B)
+  C->>B: room:contact (contact ของ A)
+  Note over C: contact ไม่ลงฐานข้อมูล
+
+  A->>C: room:report (เหตุผล, ข้อความที่เลือกแนบ)
+  alt ข้อความไม่ตรงกับ HMAC ที่ส่งจริง / รายงานซ้ำ
+    C-->>A: ack ไม่สำเร็จ
+  else ผ่าน
+    C->>D: reports (หลักฐานเข้ารหัส AES-256-GCM, หมดอายุ 30 วัน)
+    C-->>A: ack สำเร็จ
+  end
+  Note over D: admin ตรวจที่ /admin → ระงับบัญชี → core ตัดการเชื่อมต่อคนนั้นทันที
+```
+
+</details>
+
+<details>
+<summary><b>10. Push notification</b></summary>
+
+```mermaid
+sequenceDiagram
+  participant W as หน้าเว็บ + service worker
+  participant C as core
+  participant P as push service ของเบราว์เซอร์
+
+  W->>W: ผู้ใช้กดเปิด → ขอสิทธิ์ → pushManager.subscribe(VAPID key)
+  W->>C: push:subscribe (endpoint, keys)
+  C->>C: เก็บใน push_subscriptions ผูกกับ users
+  W->>C: presence:visibility (hidden: true) เมื่อสลับแท็บ
+  Note over C: มีจับคู่ / ข้อความ / สายเรียกเข้า / คนอยากคุยต่อ<br/>และแท็บถูกซ่อน (เว้นช่วง 30 วินาทีต่อชนิด)
+  C->>P: ส่ง {kind} อย่างเดียว ไม่มีเนื้อหาหรือชื่อ
+  P->>W: push event → service worker แสดงข้อความภาษาไทยตาม kind
+```
+
+</details>
+
 ## ข้อจำกัดที่ควรรู้
 
 - รันได้ instance เดียว เพราะสถานะอยู่ใน memory
-- ยังไม่มีระบบ report และยังไม่มีหน้าจัดการการระงับบัญชี
 - ตัวนับสถิติถูกเขียนลงฐานข้อมูลเป็นรอบ ถ้า process ถูกปิดกะทันหัน ตัวเลขรอบล่าสุด (ไม่เกิน 30 วินาที) จะหาย
 - รายชื่อคณะและรหัสคณะต้องแก้ให้ตรงกันกับฝั่ง client (`src/common/constants/faculties.ts` และ `src/auth/utils/student.ts`)
 
