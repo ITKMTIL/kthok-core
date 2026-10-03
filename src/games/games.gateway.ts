@@ -17,6 +17,7 @@ import {
   Participant,
   Room,
 } from '../matchmaking/matchmaking.service';
+import { isBlackjackMode } from './blackjack';
 import {
   Game,
   GamesService,
@@ -53,11 +54,13 @@ export class GamesGateway {
     if (!this.rateLimit.allow(client.id, 'game:start', LIMITS.start)) {
       return fail('rate_limited');
     }
+    const mode = isBlackjackMode(body?.mode) ? body.mode : 'dealer';
     const game = this.games.start(
       pair.room.id,
       body.type,
       client.id,
       pair.partner.socketId,
+      mode,
     );
     this.broadcast(pair.room, game);
     return { ok: true };
@@ -95,6 +98,10 @@ export class GamesGateway {
       );
     } else if (current?.type === 'tarot') {
       game = this.games.draw(pair.room.id, client.id);
+    } else if (current?.type === 'blackjack') {
+      const action = body?.action;
+      if (action !== 'hit' && action !== 'stand') return fail('invalid_move');
+      game = this.games.blackjack(pair.room.id, client.id, action);
     }
     if (!game) return fail('invalid_move');
     this.broadcast(pair.room, game);
@@ -106,6 +113,8 @@ export class GamesGateway {
     const pair = this.pairOf(client);
     if (!pair || !this.games.get(pair.room.id)) return;
     this.games.clear(pair.room.id);
+    clearTimeout(this.timers.get(pair.room.id));
+    this.timers.delete(pair.room.id);
     for (const participant of this.participants(pair.room)) {
       this.server.to(participant.socketId).emit('game:state', {
         roomId: pair.room.id,
@@ -114,7 +123,28 @@ export class GamesGateway {
     }
   }
 
+  private readonly timers = new Map<string, NodeJS.Timeout>();
+
+  private schedule(room: Room, game: Game) {
+    clearTimeout(this.timers.get(room.id));
+    this.timers.delete(room.id);
+    if (game.type !== 'blackjack' || game.finished) return;
+    const { deadline } = game;
+    this.timers.set(
+      room.id,
+      setTimeout(
+        () => {
+          this.timers.delete(room.id);
+          const timedOut = this.games.timeoutBlackjack(room.id, deadline);
+          if (timedOut) this.broadcast(room, timedOut);
+        },
+        Math.max(0, deadline - Date.now()),
+      ),
+    );
+  }
+
   private broadcast(room: Room, game: Game) {
+    this.schedule(room, game);
     for (const participant of this.participants(room)) {
       this.server.to(participant.socketId).emit('game:state', {
         roomId: room.id,

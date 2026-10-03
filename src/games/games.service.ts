@@ -1,7 +1,16 @@
 import { Injectable } from '@nestjs/common';
 import { randomInt } from 'node:crypto';
+import {
+  BlackjackGame,
+  BlackjackMode,
+  blackjackView,
+  dealBlackjack,
+  hit,
+  stand,
+  standAll,
+} from './blackjack';
 
-export const GAME_TYPES = ['xo', 'rps', 'taksa', 'tarot'] as const;
+export const GAME_TYPES = ['xo', 'rps', 'taksa', 'tarot', 'blackjack'] as const;
 export type GameType = (typeof GAME_TYPES)[number];
 
 export const RPS_CHOICES = ['rock', 'paper', 'scissors'] as const;
@@ -107,7 +116,7 @@ interface TarotGame {
   draws: Map<string, { card: number; reversed: boolean }>;
 }
 
-export type Game = XoGame | RpsGame | TaksaGame | TarotGame;
+export type Game = XoGame | RpsGame | TaksaGame | TarotGame | BlackjackGame;
 
 export function isGameType(value: unknown): value is GameType {
   return GAME_TYPES.includes(value as GameType);
@@ -125,7 +134,24 @@ export class GamesService {
     return this.games.get(roomId) ?? null;
   }
 
-  start(roomId: string, type: GameType, starter: string, other: string): Game {
+  start(
+    roomId: string,
+    type: GameType,
+    starter: string,
+    other: string,
+    mode: BlackjackMode = 'dealer',
+  ): Game {
+    if (type === 'blackjack') {
+      const previous = this.games.get(roomId);
+      const game = dealBlackjack(
+        mode,
+        starter,
+        other,
+        previous?.type === 'blackjack' ? previous : null,
+      );
+      this.games.set(roomId, game);
+      return game;
+    }
     const players: [string, string] = [starter, other];
     const game: Game =
       type === 'taksa'
@@ -214,12 +240,30 @@ export class GamesService {
     return game;
   }
 
+  blackjack(
+    roomId: string,
+    player: string,
+    action: 'hit' | 'stand',
+  ): Game | null {
+    const game = this.games.get(roomId);
+    if (game?.type !== 'blackjack') return null;
+    const ok = action === 'hit' ? hit(game, player) : stand(game, player);
+    return ok ? game : null;
+  }
+
+  timeoutBlackjack(roomId: string, deadline: number): Game | null {
+    const game = this.games.get(roomId);
+    if (game?.type !== 'blackjack' || game.deadline !== deadline) return null;
+    return standAll(game) ? game : null;
+  }
+
   clear(roomId: string) {
     this.games.delete(roomId);
   }
 }
 
 export function viewOf(game: Game, viewer: string) {
+  if (game.type === 'blackjack') return blackjackView(game, viewer);
   const who = (id: string | null) =>
     id === null ? null : id === viewer ? 'me' : 'them';
   if (game.type === 'xo') {
