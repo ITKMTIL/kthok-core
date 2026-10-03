@@ -27,7 +27,9 @@ repo นี้คือ server (NestJS + socket.io) ทำหน้าที่�
 - **ล็อกอินด้วย Google** — รับเฉพาะอีเมลนักศึกษา ดึงคณะจากรหัสนักศึกษา แล้วออก session token แบบเข้ารหัส (AES-256-GCM)
 - **แชต** — ส่งต่อข้อความ สถานะกำลังพิมพ์ รีแอคชัน พร้อมกรองคำหยาบและจำกัดความถี่
 - **คิวเพลง YouTube** ต่อห้อง — server ถือสถานะเพลง ทุกคนในห้องเห็นตรงกัน
-- **คำถามชวนคุยและมินิเกม** — สุ่มคำถามธีม สจล. ตามหัวข้อห้อง, XO และเป่ายิ้งฉุบ โดย server ถือ state
+- **คำถามชวนคุยและมินิเกม** — สุ่มคำถามธีม สจล. ตามหัวข้อห้อง (ส่งเป็นรหัสคำถาม หน้าเว็บแสดงตามภาษาของแต่ละคน), XO และเป่ายิ้งฉุบ โดย server ถือ state
+- **สติกเกอร์ ตอบกลับ ยกเลิกส่ง อ่านแล้ว** — สติกเกอร์ตรวจกับรายการที่กำหนด, ตอบกลับได้เฉพาะข้อความในห้อง, ยกเลิกส่งได้ภายใน 1 นาที (ลบ HMAC ของข้อความนั้นด้วย), ส่งสถานะอ่านแล้วต่อเฉพาะข้อความของอีกฝ่าย
+- **คำต้องห้ามที่ admin จัดการเอง** — เพิ่ม/ลบคำได้จาก dashboard เก็บในตาราง `banned_words` ใช้ร่วมกับรายการพื้นฐานในโค้ด
 - **อยากคุยต่อ** — หลังจบห้อง 10 นาที ถ้ากดทั้งคู่ server ส่ง contact ที่แต่ละคนพิมพ์ให้กัน ไม่เก็บไว้
 - **รายงาน** — ผู้ใช้เลือกข้อความแนบได้ server ตรวจกับลายเซ็น (HMAC) ของข้อความที่ส่งจริงในห้อง เก็บแบบเข้ารหัส ลบเองใน 30 วัน admin ตรวจและระงับบัญชีได้ คนที่ถูกระงับหลุดทันที
 - **Push notification** — เตือนเมื่อจับคู่ได้ มีข้อความ สายเรียกเข้า หรือมีคนอยากคุยต่อ ตอนแท็บถูกซ่อน ส่งแค่ชนิดเหตุการณ์ ไม่ส่งเนื้อหา
@@ -54,6 +56,7 @@ repo นี้คือ server (NestJS + socket.io) ทำหน้าที่�
 | `blocks` | คู่ของผู้ใช้ที่บล็อกกัน | ไม่จับคู่ซ้ำ |
 | `daily_stats` | ยอดรวมรายวันต่อ metric และคณะ | รายงานการใช้งาน |
 | `reports` | ผู้รายงาน/ผู้ถูกรายงาน (id ภายใน), เหตุผล, หลักฐานที่เข้ารหัส, สถานะ, วันหมดอายุ 30 วัน | ให้ admin ตรวจ |
+| `banned_words` | คำต้องห้ามที่ admin เพิ่มเอง | กรองข้อความ |
 | `push_subscriptions` | endpoint และ key ของ push ที่ผู้ใช้เปิดเอง ผูกกับ users | ส่งแจ้งเตือน ลบเมื่อปิดหรือ endpoint หมดอายุ |
 
 ## เทคโนโลยี
@@ -162,6 +165,7 @@ src/
   followup/      หลังจบห้อง: อยากคุยต่อ และรายงาน
   reports/       เก็บ/ตรวจรายงาน เข้ารหัสหลักฐาน ลบเมื่อหมดอายุ
   push/          Web Push
+  moderation/    คำต้องห้ามจากฐานข้อมูล
   users/         ผู้ใช้แบบ hash, การระงับ, การบล็อก
   stats/         ตัวนับสถิติรายวัน
   prisma/        การเชื่อมต่อฐานข้อมูล
@@ -184,7 +188,7 @@ src/
 | กลุ่ม | จากหน้าเว็บ | จาก server |
 | --- | --- | --- |
 | จับคู่ | `match:find` (`topic`, `preferFaculty`), `room:leave`, `room:block`, `room:feedback` | `match:found`, `match:fallback`, `room:closed`, `partner:presence`, `stats` |
-| แชต | `chat:send`, `chat:typing`, `chat:react`, `chat:prompt` | `chat:message`, `chat:typing`, `chat:reaction`, `chat:prompt` |
+| แชต | `chat:send` (`text` หรือ `sticker`, `replyTo`), `chat:typing`, `chat:react`, `chat:prompt`, `chat:unsend`, `chat:read` | `chat:message`, `chat:typing`, `chat:reaction`, `chat:prompt` (`key`), `chat:unsent`, `chat:read` |
 | เกม | `game:start`, `game:move`, `game:end` | `game:state` |
 | หลังจบห้อง | `room:keep`, `room:report` | `room:keep-offered`, `room:contact` |
 | แจ้งเตือน | `presence:visibility`, `push:subscribe`, `push:unsubscribe` | — |
@@ -193,7 +197,7 @@ src/
 | โทร | `call:invite`, `call:accept`, `call:decline`, `call:end`, `call:signal`, `call:ice` | `call:incoming`, `call:accepted`, `call:ended`, `call:signal` |
 | ระบบ | — | `auth:ok`, `auth:error`, `auth:banned`, `features` |
 
-HTTP สำหรับ admin (Bearer session ของ admin): `GET /admin/overview?days=`, `GET /admin/reports?status=open|closed`, `POST /admin/reports/:id/resolve` (`{action: "dismiss"}` หรือ `{action: "ban", days: 1|7|30|null, reason}`), `POST /admin/users/:id/unban`
+HTTP สำหรับ admin (Bearer session ของ admin): `GET /admin/overview?days=`, `GET /admin/reports?status=open|closed`, `POST /admin/reports/:id/resolve` (`{action: "dismiss"}` หรือ `{action: "ban", days: 1|7|30|null, reason}`), `POST /admin/users/:id/unban`, `GET /admin/words`, `POST /admin/words` (`{word}`), `DELETE /admin/words/:id`
 
 ## Flow การทำงานของแต่ละฟีเจอร์
 
