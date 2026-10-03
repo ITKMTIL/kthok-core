@@ -2,8 +2,6 @@ import { Injectable, Logger } from '@nestjs/common';
 import { createHmac } from 'node:crypto';
 import { PrismaService } from '../prisma/prisma.service';
 
-const STRIKE_WINDOW_MS = 7 * 86_400_000;
-
 export interface UserRecord {
   bannedUntil: Date | null;
 }
@@ -22,7 +20,17 @@ export class UsersService {
       .map((id) => this.hashOf(id)),
   );
 
+  private readonly banListeners = new Set<(hash: string) => void>();
+
   constructor(private readonly prisma: PrismaService) {}
+
+  onBan(listener: (hash: string) => void) {
+    this.banListeners.add(listener);
+  }
+
+  notifyBan(hash: string) {
+    this.banListeners.forEach((listener) => listener(hash));
+  }
 
   isAdmin(hash: string): boolean {
     return this.adminHashes.has(hash);
@@ -100,9 +108,8 @@ export class UsersService {
     }
   }
 
-  async strikes(hash: string, now = new Date()): Promise<number> {
+  async strikes(hash: string, since: Date): Promise<number> {
     if (!this.enabled) return 0;
-    const since = new Date(now.getTime() - STRIKE_WINDOW_MS);
     try {
       return await this.prisma.block.count({
         where: { blocked: { hash }, createdAt: { gte: since } },

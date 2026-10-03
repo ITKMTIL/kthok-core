@@ -16,8 +16,10 @@ model User {
   createdAt   DateTime  @default(now()) @map("created_at")
   lastSeenAt  DateTime  @default(now()) @map("last_seen_at")
 
-  blocksMade     Block[] @relation("blocker")
-  blocksReceived Block[] @relation("blocked")
+  blocksMade      Block[]  @relation("blocker")
+  blocksReceived  Block[]  @relation("blocked")
+  reportsMade     Report[] @relation("reporter")
+  reportsReceived Report[] @relation("reported")
 
   @@map("users")
 }
@@ -44,4 +46,24 @@ model DailyStat {
 
   @@id([day, metric, faculty])
   @@map("daily_stats")
+}
+
+model Report {
+  id         Int       @id @default(autoincrement())
+  reportedId Int       @map("reported_id")
+  reporterId Int       @map("reporter_id")
+  reason     String
+  evidence   String
+  status     String    @default("open")
+  createdAt  DateTime  @default(now()) @map("created_at")
+  expiresAt  DateTime  @map("expires_at")
+  resolvedAt DateTime? @map("resolved_at")
+
+  reported User @relation("reported", fields: [reportedId], references: [id], onDelete: Cascade)
+  reporter User @relation("reporter", fields: [reporterId], references: [id], onDelete: Cascade)
+
+  @@index([status, createdAt])
+  @@index([reportedId, createdAt])
+  @@index([expiresAt])
+  @@map("reports")
 }

@@ -20,6 +20,7 @@ import {
 import { fail } from '../common/utils/ack';
 import { hasBannedWords, maskBannedWords } from '../common/utils/word-filter';
 import { CALL_ENABLED, VOICE_ENABLED } from '../config/features';
+import { FollowupService } from '../followup/followup.service';
 import { GamesService } from '../games/games.service';
 import { GATEWAY_OPTIONS, RECONNECT_GRACE_MS } from '../config/gateway';
 import {
@@ -30,12 +31,14 @@ import {
 import { MusicService } from '../music/music.service';
 import { PromptsService } from '../prompts/prompts.service';
 import { ReactionsService } from '../reactions/reactions.service';
+import { ReportsService } from '../reports/reports.service';
 import { StatsService } from '../stats/stats.service';
 import { UsersService } from '../users/users.service';
 
 const MAX_NICKNAME_LENGTH = 24;
 const MAX_MESSAGE_LENGTH = 1000;
 const PREFERENCE_GRACE_MS = Number(process.env.PREFERENCE_GRACE_MS ?? 8000);
+const STRIKE_WINDOW_MS = 7 * 86_400_000;
 const PENALTY_STEPS: [strikes: number, waitMs: number][] = [
   [6, 90_000],
   [3, 30_000],
@@ -68,13 +71,17 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     private readonly music: MusicService,
     private readonly prompts: PromptsService,
     private readonly games: GamesService,
+    private readonly followup: FollowupService,
+    private readonly reports: ReportsService,
     private readonly reactions: ReactionsService,
     private readonly calls: CallService,
     private readonly rateLimit: RateLimitService,
     private readonly auth: AuthService,
     private readonly users: UsersService,
     private readonly stats: StatsService,
-  ) {}
+  ) {
+    this.users.onBan((hash) => this.kick(hash));
+  }
 
   handleConnection(client: Socket) {
     const identity = this.auth.verifySession(client.handshake.auth?.token);
@@ -101,6 +108,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       call: CALL_ENABLED,
       voice: VOICE_ENABLED,
       block: this.users.enabled && identity !== null,
+      report: this.reports.enabled && identity !== null,
     });
     if (this.cancelPendingClose(client.id))
       this.notifyPresence(client.id, false);
@@ -246,6 +254,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     };
     this.reactions.track(room.id, message.id);
     this.calls.noteMessage(room.id);
+    this.followup.note(client.id, message.id, message.text);
     this.stats.count('message');
     this.server.to(partner.socketId).emit('chat:message', message);
     return { ok: true, message };
@@ -310,13 +319,19 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     for (const hash of await this.users.avoidList(identity.userHash)) {
       data.avoid.add(hash);
     }
-    const strikes = await this.users.strikes(identity.userHash);
+    const since = new Date(Date.now() - STRIKE_WINDOW_MS);
+    const [blocked, reported] = await Promise.all([
+      this.users.strikes(identity.userHash, since),
+      this.reports.countAgainst(identity.userHash, since),
+    ]);
+    const strikes = blocked + reported;
     data.penaltyMs =
       PENALTY_STEPS.find(([threshold]) => strikes >= threshold)?.[1] ?? 0;
   }
 
   private recordMatch(room: Room) {
     if (!room.guest) return;
+    this.followup.open(room);
     this.stats.count('match', room.owner.faculty);
     this.stats.count('match', room.guest.faculty);
     if (room.ownerPrefers && room.ownerPrefers === room.guest.faculty) {
@@ -350,6 +365,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       this.music.clear(left.room.id);
       this.prompts.clear(left.room.id);
       this.games.clear(left.room.id);
+      this.followup.end(left.room.id);
       this.reactions.clear(left.room.id);
       this.calls.clear(left.room.id);
     }
@@ -368,6 +384,17 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
         .to(left.partner.socketId)
         .emit('room:closed', { roomId: left.room.id, reason: 'partner_left' });
     }
+  }
+
+  private kick(hash: string) {
+    for (const socket of this.server.of('/').sockets.values()) {
+      const data = socket.data as ClientData | undefined;
+      if (data?.identity?.userHash !== hash) continue;
+      this.closeRoomOf(socket.id);
+      socket.emit('auth:banned', {});
+      socket.disconnect(true);
+    }
+    this.broadcastStats();
   }
 
   private broadcastStats() {

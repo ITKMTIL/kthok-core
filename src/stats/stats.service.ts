@@ -19,6 +19,9 @@ export type Metric =
   | 'block'
   | 'feedback_up'
   | 'feedback_down'
+  | 'report'
+  | 'keep_offer'
+  | 'keep_mutual'
   | 'peak_online';
 
 const FLUSH_INTERVAL_MS = Number(process.env.STATS_FLUSH_MS ?? 30_000);
