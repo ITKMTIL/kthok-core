@@ -9,7 +9,7 @@
 
 ## env
 
-ตารางเต็มใน README. สำคัญ: `GOOGLE_CLIENT_ID`, `SESSION_SECRET`, `USER_HASH_SECRET`, `DATABASE_URL`, `ADMIN_STUDENT_IDS`, `CLIENT_ORIGIN`, `CALL_ENABLED`, `VOICE_ENABLED`, `CALL_MIN_MESSAGES`, `TURN_KEY_ID`, `TURN_KEY_API_TOKEN`, `CALL_FORCE_RELAY`, `PREFERENCE_GRACE_MS`, `RECONNECT_GRACE_MS`. ค่าจริงเจ้าของใส่เอง
+ตารางเต็มใน README. สำคัญ: `GOOGLE_CLIENT_ID`, `SESSION_SECRET`, `USER_HASH_SECRET`, `DATABASE_URL`, `ADMIN_STUDENT_IDS`, `CLIENT_ORIGIN`, `CALL_ENABLED`, `VOICE_ENABLED`, `CALL_MIN_MESSAGES`, `TURN_KEY_ID`, `TURN_KEY_API_TOKEN`, `CALL_FORCE_RELAY`, `PREFERENCE_GRACE_MS`, `RECONNECT_GRACE_MS`, `VAPID_PUBLIC_KEY`/`VAPID_PRIVATE_KEY`/`VAPID_SUBJECT` (สร้างด้วย `pnpm exec web-push generate-vapid-keys`), `FOLLOWUP_MS`. ค่าจริงเจ้าของใส่เอง
 
 ## Docker
 
@@ -25,4 +25,5 @@
 - core 3056 build ไป `$TMPDIR/kthok-test/core`, ส่ง `GOOGLE_CLIENT_ID=` `DATABASE_URL=` ว่างตรง ๆ (Prisma อ่าน `.env` เอง)
 - partner จำลอง = socket.io-client script (`node` subcommand ใช้ deps ของ client), faculty id เช่น `engineering`
 - ห้ามเปิดเพลง YouTube ในเทส
+- เทสที่ต้องมี auth + DB (report, block, push, admin): `pnpm exec prisma dev --name kthoktest --detach` → migrate deploy → รัน `$TMPDIR/kthok-test/core/main.js` เองด้วย `GOOGLE_CLIENT_ID=test.apps SESSION_SECRET=testsecret DATABASE_URL=<url>&pgbouncer=true&connection_limit=1` แล้วสร้าง token ด้วย `sealSession({v:2, sub: HMAC(secret, studentId), faculty, exp}, secret)` จาก dist; จบแล้ว `prisma dev stop/rm kthoktest`
 - check: `pnpm exec tsc --noEmit -p tsconfig.json && pnpm exec eslint src`

@@ -9,6 +9,11 @@
 - context ที่อัปเดต: ไฟล์ไหน
 ```
 
+## 2026-10-03 — ฟีเจอร์ชุด 1–10
+- `8f77785` หัวข้อ/ไม่จับซ้ำ/คนรอ/หน่วงคนป่วน, prompts, `e26cdad` เกม, `74bba00` followup + reports + admin endpoints + migration reports, `54f8ae1` push + migration push_subscriptions, README
+- ความเป็นนิรนาม: กระทบ ผ่าน checklist โดยเจ้าของอนุมัติ — `reports` เก็บหลักฐานเข้ารหัส 30 วันเฉพาะข้อความที่ผ่านการตรวจ HMAC, admin เห็นแค่ "ผู้ใช้ #id"; `push_subscriptions` ผูก hash, payload แค่ kind; contact/HMAC อยู่ memory ≤10 นาที; stats `{faculties, topics}` ไม่มีตัวเลขต่อคณะ
+- context ที่อัปเดต: privacy, core, ops, decisions, open-items, changelog
+
 ## 2026-10-03 — ตั้งระบบ context + agents
 - เพิ่ม `context/`, `.claude/agents` (kthok-check, kthok-tester, kthok-scout, kthok-context), `.claude/scripts` (test-stack, context-guard), Stop hook; `CLAUDE.md` อยู่ในเครื่อง (ถูก gitignore โดยเพื่อนในทีม)
 - ความเป็นนิรนาม: ไม่กระทบ

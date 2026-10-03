@@ -8,11 +8,11 @@
 - [ ] เจ้าของตั้ง `ADMIN_STUDENT_IDS` เอง
 - [ ] คุยกับเพื่อนในทีมเรื่อง schema ที่ถูกแทนที่ ก่อน push
 - [ ] ทดสอบ TURN จริง
+- [ ] สร้าง VAPID key (`pnpm exec web-push generate-vapid-keys`) แล้วใส่ใน `.env` ถ้าจะเปิด push
+- [ ] รัน `prisma migrate deploy` กับ DB จริง (มี migration ใหม่ reports + push_subscriptions)
 
 ## ไอเดียที่เสนอไว้ ยังไม่ได้สั่ง
 
-- report + หน้าจัดการแบน (ต้องตกลงเรื่องหลักฐาน — ขัดกับไม่เก็บข้อความ ดู privacy.md)
-- ไม่จับคู่ซ้ำคนเดิมติด ๆ
 - test (matchmaking, word filter, session cipher), CI/CD + deploy, ลดขนาด image (~1GB), health check + JSON log
 
 ## ข้อจำกัด
