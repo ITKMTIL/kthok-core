@@ -4,6 +4,7 @@ import { CallModule } from '../call/call.module';
 import { RateLimitModule } from '../common/rate-limit/rate-limit.module';
 import { MatchmakingModule } from '../matchmaking/matchmaking.module';
 import { MusicModule } from '../music/music.module';
+import { PromptsModule } from '../prompts/prompts.module';
 import { ReactionsModule } from '../reactions/reactions.module';
 import { UsersModule } from '../users/users.module';
 import { VoiceModule } from '../voice/voice.module';
@@ -15,6 +16,7 @@ import { ChatGateway } from './chat.gateway';
     CallModule,
     MatchmakingModule,
     MusicModule,
+    PromptsModule,
     RateLimitModule,
     ReactionsModule,
     UsersModule,

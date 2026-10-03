@@ -27,6 +27,7 @@ import {
   Room,
 } from '../matchmaking/matchmaking.service';
 import { MusicService } from '../music/music.service';
+import { PromptsService } from '../prompts/prompts.service';
 import { ReactionsService } from '../reactions/reactions.service';
 import { StatsService } from '../stats/stats.service';
 import { UsersService } from '../users/users.service';
@@ -64,6 +65,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   constructor(
     private readonly matchmaking: MatchmakingService,
     private readonly music: MusicService,
+    private readonly prompts: PromptsService,
     private readonly reactions: ReactionsService,
     private readonly calls: CallService,
     private readonly rateLimit: RateLimitService,
@@ -344,6 +346,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     const left = this.matchmaking.leave(socketId);
     if (left) {
       this.music.clear(left.room.id);
+      this.prompts.clear(left.room.id);
       this.reactions.clear(left.room.id);
       this.calls.clear(left.room.id);
     }
