@@ -24,17 +24,18 @@ repo นี้คือ server (NestJS + socket.io) ทำหน้าที่�
 - **ล็อกอินด้วย Google** — รับเฉพาะอีเมลนักศึกษา ดึงคณะจากรหัสนักศึกษา แล้วออก session token แบบเข้ารหัส (AES-256-GCM)
 - **แชต** — ส่งต่อข้อความ สถานะกำลังพิมพ์ รีแอคชัน พร้อมกรองคำหยาบและจำกัดความถี่
 - **คิวเพลง YouTube** ต่อห้อง — server ถือสถานะเพลง ทุกคนในห้องเห็นตรงกัน
+- **ข้อความเสียง** — ส่งต่อไฟล์เสียงไม่เกิน 60 วินาทีให้อีกฝ่าย ตรวจชนิดไฟล์และขนาดก่อน ไม่เก็บไฟล์ไว้
 - **สัญญาณโทรเสียง** — ส่งต่อ offer/answer/ICE ของ WebRTC และออก credential TURN อายุสั้น
 - **รอการกลับมา** — socket หลุดแล้วห้องยังอยู่ช่วงหนึ่ง กลับมาทันก็คุยต่อได้
 - **บล็อกและระงับบัญชี** — คู่ที่บล็อกกันจะไม่ถูกจับคู่อีก บัญชีที่ถูกระงับเชื่อมต่อไม่ได้
-- **สถิติการใช้งาน** — นับยอดรวมรายวัน (จับคู่ ข้อความ สายโทร ความพอใจ) และมี endpoint สำหรับหน้า dashboard ของ admin
+- **สถิติการใช้งาน** — นับยอดรวมรายวัน (จับคู่ ข้อความ ข้อความเสียง สายโทร ความพอใจ) และมี endpoint สำหรับหน้า dashboard ของ admin
 
 ### ความเป็นส่วนตัว
 
 - สถานะห้อง ข้อความ คิวเพลง และสายโทรอยู่ใน memory เท่านั้น restart แล้วหายหมด
 - ไม่เก็บเนื้อหาข้อความ เก็บแค่ id ของข้อความล่าสุดใน memory เพื่อให้รีแอคชันทำงาน
 - ไม่เก็บอีเมล รหัสนักศึกษา หรือนามแฝง
-- เสียงของการโทรไม่ผ่าน server นี้
+- เสียงของการโทรไม่ผ่าน server นี้ ส่วนข้อความเสียงผ่านแค่ memory แล้วส่งต่อทันที
 
 สิ่งที่เก็บในฐานข้อมูล (เมื่อตั้ง `DATABASE_URL`):
 
@@ -85,12 +86,13 @@ pnpm exec prisma migrate deploy
 | `PREFERENCE_GRACE_MS` | `8000` | เวลารอคณะที่ขอก่อนย้ายไปห้องว่างอื่น |
 | `RECONNECT_GRACE_MS` | `120000` | เวลาที่เก็บห้องไว้เมื่อ socket หลุด |
 | `CALL_ENABLED` | `true` | ตั้ง `false` เพื่อปิดระบบโทรทั้งหมด |
+| `VOICE_ENABLED` | `true` | ตั้ง `false` เพื่อปิดข้อความเสียง |
 | `CALL_MIN_MESSAGES` | `5` | ต้องคุยกันกี่ข้อความก่อนถึงจะโทรได้ |
 | `TURN_KEY_ID`, `TURN_KEY_API_TOKEN` | ว่าง | key ของ Cloudflare Realtime TURN เว้นว่าง = ใช้ STUN อย่างเดียว |
 | `CALL_FORCE_RELAY` | `true` | ให้เสียงทุกสายผ่าน TURN เพื่อไม่ให้คู่สนทนาเห็น IP กัน |
 | `DATABASE_URL` | ว่าง | connection string ของ PostgreSQL เว้นว่าง = ไม่ใช้ฐานข้อมูล |
 | `USER_HASH_SECRET` | ว่าง | ค่าลับสำหรับทำ hash รหัสนักศึกษา เว้นว่าง = ใช้ `SESSION_SECRET` ห้ามเปลี่ยนหลังมีผู้ใช้แล้ว ไม่งั้นการบล็อกและการระงับจะหลุด |
-| `ADMIN_STUDENT_IDS` | ว่าง | รหัสนักศึกษาของ admin คั่นด้วย `,` ใช้เปิดหน้า dashboard |
+| `ADMIN_STUDENT_IDS` | ว่าง | รหัสนักศึกษาของ admin คั่นด้วย `,` ใช้เปิดหน้า dashboard และจับคู่กับบัญชีตัวเองได้ (เปิดสองแท็บเพื่อทดสอบ) |
 
 ### คำสั่ง
 
@@ -132,6 +134,7 @@ src/
   music/         คิวเพลงต่อห้อง
   reactions/     รีแอคชันบนข้อความ
   call/          สัญญาณโทรและ credential TURN
+  voice/         ส่งต่อข้อความเสียง
   users/         ผู้ใช้แบบ hash, การระงับ, การบล็อก
   stats/         ตัวนับสถิติรายวัน
   prisma/        การเชื่อมต่อฐานข้อมูล
@@ -156,6 +159,7 @@ src/
 | จับคู่ | `match:find`, `room:leave`, `room:block`, `room:feedback` | `match:found`, `match:fallback`, `room:closed`, `partner:presence`, `stats` |
 | แชต | `chat:send`, `chat:typing`, `chat:react` | `chat:message`, `chat:typing`, `chat:reaction` |
 | เพลง | `music:add`, `music:play`, `music:pause`, `music:skip`, `music:remove` | `music:state` |
+| ข้อความเสียง | `voice:send` | `voice:message` |
 | โทร | `call:invite`, `call:accept`, `call:decline`, `call:end`, `call:signal`, `call:ice` | `call:incoming`, `call:accepted`, `call:ended`, `call:signal` |
 | ระบบ | — | `auth:ok`, `auth:error`, `auth:banned`, `features` |
 
@@ -445,6 +449,31 @@ flowchart LR
   Render --> Save["บันทึกรูป"]
   Render --> Copy["คัดลอก"]
   Render --> Sheet["share sheet ของระบบ"]
+```
+
+</details>
+
+<details>
+<summary><b>8. ข้อความเสียง</b></summary>
+
+core ส่งต่อไฟล์เสียงอย่างเดียว ไม่เขียนลงดิสก์หรือฐานข้อมูล ไฟล์อยู่ใน memory ของ browser ทั้งสองฝั่งจนออกจากห้อง
+
+```mermaid
+sequenceDiagram
+  participant A as หน้าเว็บ A
+  participant C as core
+  participant B as หน้าเว็บ B
+
+  Note over A: กดไมค์ อัดด้วย MediaRecorder<br/>หยุดเองที่ 60 วินาที<br/>เก็บระดับเสียงเป็น waveform 48 แท่ง
+  A->>C: voice:send (ไฟล์เสียง, ความยาว, waveform)
+  alt ปิดระบบ / ไฟล์เกิน 512KB / ไม่ใช่ webm, mp4, ogg / ส่งถี่เกิน
+    C-->>A: ack ไม่สำเร็จ
+  else ผ่าน
+    C->>B: voice:message (ไฟล์เสียง + mime)
+    C-->>A: ack พร้อม id ข้อความ
+  end
+  Note over A,B: สร้าง blob URL ในเครื่อง ฟังซ้ำ เลื่อนตำแหน่ง<br/>และเร่งความเร็วได้ เพลง YouTube ลดเสียงระหว่างอัดหรือฟัง
+  Note over A,B: ออกจากห้อง → revoke blob URL ไฟล์หายจากเครื่อง
 ```
 
 </details>
