@@ -12,14 +12,15 @@ Port 3001. ทุกอย่างของห้องอยู่ใน memor
 | `music/` | คิว YouTube ต่อห้อง, ตรวจชื่อผ่าน oEmbed |
 | `reactions/` | track id ข้อความล่าสุด 200 อัน/ห้อง, คนละ 1 รีแอคชัน |
 | `call/` | สัญญาณ WebRTC, ring timeout, `turn.service.ts` ออก credential Cloudflare |
-| `prompts/` | `chat:prompt` สุ่มคำถาม (ตามหัวข้อ, ไม่ซ้ำในห้อง) ส่งทั้งสองฝั่ง |
+| `prompts/` | `chat:prompt` สุ่มรหัสคำถาม `group.index` (ตามหัวข้อ, ไม่ซ้ำในห้อง) ส่งทั้งสองฝั่ง; ข้อความจริงอยู่ใน client `lib/i18n` (จำนวนต้องตรง `PROMPT_COUNTS`) |
+| `moderation/` | `WordListService` โหลด `banned_words` แล้ว `setExtraBannedWords` ให้ word-filter (regex ระดับ module) |
 | `games/` | `game:start/move/end` → `game:state` มุมมองต่อคน (`viewOf`), XO + RPS, ผู้เล่นอ้างด้วย socketId |
-| `followup/` | record หลังจบห้องต่อ socket (HMAC ข้อความ, contact) อายุ `FOLLOWUP_MS`; `room:keep` แลก contact เมื่อกดทั้งคู่, `room:report` ตรวจ HMAC แล้วส่งให้ reports |
+| `followup/` | record หลังจบห้องต่อ socket (trail: HMAC ข้อความ/null สำหรับเสียง+สติกเกอร์, sender, at; contact) ใช้ตรวจ `replyTo`, `chat:unsend` (≤60s เจ้าของเท่านั้น), `chat:read` (ต้องเป็นข้อความของอีกฝ่าย) อายุ `FOLLOWUP_MS`; `room:keep` แลก contact เมื่อกดทั้งคู่, `room:report` ตรวจ HMAC แล้วส่งให้ reports |
 | `reports/` | ตาราง `reports` หลักฐานเข้ารหัส (`sealSession` key `evidence:`+SESSION_SECRET), purge รายชั่วโมง, list/resolve/unban, `countAgainst` |
 | `push/` | `web-push` + VAPID, presence (hidden/disconnected) ต่อ socket, `nudge(socketId, kind)` throttle 30s, ลบ subscription 404/410 |
 | `voice/` | `voice:send` → ตรวจ magic bytes (webm/mp4/ogg), ≤512KB, ≤60s, peaks 48 ตัว, 6/นาที → `voice:message` ให้คู่ |
 | `users/` | `hashOf`, `touch`, `isBanned`, `avoidList`, `block`, `strikes`, `isAdmin` (`ADMIN_STUDENT_IDS` → hash), `onBan`/`notifyBan` (chat gateway เตะ socket ของคนที่ถูกระงับ) |
-| `stats/` | buffer นับรายวัน flush ทุก 30s, TZ +7; metrics: login match preference_requested preference_met message voice call room room_seconds block feedback_up feedback_down report keep_offer keep_mutual peak_online |
+| `stats/` | buffer นับรายวัน flush ทุก 30s, TZ +7; metrics: login match preference_requested preference_met message sticker voice call room room_seconds block feedback_up feedback_down report keep_offer keep_mutual peak_online |
 | `admin/` | Bearer session ของ admin: `GET /admin/overview` (+`totals.openReports`), `GET /admin/reports?status=`, `POST /admin/reports/:id/resolve`, `POST /admin/users/:id/unban`; 401/403/503 |
 | `prisma/` | `enabled` getter, ไม่ต่อ DB ถ้าไม่มี URL |
 | `common/` | `constants/{faculties,reactions}`, `utils/{ack,word-filter,youtube}`, `rate-limit/` |
@@ -36,7 +37,7 @@ Port 3001. ทุกอย่างของห้องอยู่ใน memor
 
 ## Database
 
-`prisma/schema.prisma`: `users`, `blocks`, `daily_stats`, `reports`, `push_subscriptions` (ดู privacy.md). migrations `20261003000000_init`, `20261003100000_reports`, `20261003110000_push_subscriptions` (สร้าง SQL ด้วย `prisma migrate diff --from-schema-datamodel <old> --to-schema-datamodel prisma/schema.prisma --script`). postinstall รัน `prisma generate`. Docker entrypoint รัน `prisma migrate deploy` เมื่อมี URL. Prisma อ่าน `kthok-core/.env` เอง → ตอนเทสต้องส่ง `DATABASE_URL=` ว่างตรง ๆ.
+`prisma/schema.prisma`: `users`, `blocks`, `daily_stats`, `reports`, `push_subscriptions`, `banned_words` (ดู privacy.md). migrations `..._init`, `..._reports`, `..._push_subscriptions`, `20261003120000_banned_words` (สร้าง SQL ด้วย `prisma migrate diff --from-schema-datamodel <old> --to-schema-datamodel prisma/schema.prisma --script`). postinstall รัน `prisma generate`. Docker entrypoint รัน `prisma migrate deploy` เมื่อมี URL. Prisma อ่าน `kthok-core/.env` เอง → ตอนเทสต้องส่ง `DATABASE_URL=` ว่างตรง ๆ.
 
 ## Socket events
 

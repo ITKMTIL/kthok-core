@@ -13,7 +13,7 @@
 
 ## ไอเดียที่เสนอไว้ ยังไม่ได้สั่ง
 
-- test (matchmaking, word filter, session cipher), CI/CD + deploy, ลดขนาด image (~1GB), health check + JSON log
+- test (matchmaking, word filter, session cipher, followup), CI/CD + deploy, scale ด้วย Redis, health check + JSON log
 
 ## ข้อจำกัด
 

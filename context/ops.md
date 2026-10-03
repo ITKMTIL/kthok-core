@@ -3,6 +3,7 @@
 ## รันตอนพัฒนา
 
 - `pnpm start:dev` (port 3001) — เจ้าของรันเอง watcher อาจค้างหลัง git เขียนไฟล์ทับ (merge/reset/สลับ branch) → เทียบ `dist/` กับ `src/` แล้ว `pnpm exec tsc -p tsconfig.build.json --incremental false` ถ้าค้าง
+- migration ใหม่ต้องรัน `pnpm exec prisma migrate deploy` กับ DB จริงของเจ้าของด้วย ไม่งั้น endpoint ที่ใช้ตารางใหม่ (เช่น /admin) พัง
 - DB: `docker compose up -d db` (user/pass/db = kthok/kthok/kthok, `127.0.0.1:5432`) แล้ว `pnpm exec prisma migrate deploy`
 - ไม่ใช้ Docker: `pnpm exec prisma dev --detach` ต้องต่อท้าย URL ด้วย `&pgbouncer=true&connection_limit=1`
 - client อยู่ที่ `../kthok-client` (port 3000), tunnel cloudflared → อาจมีคนจริงต่ออยู่
@@ -13,7 +14,8 @@
 
 ## Docker
 
-ทุก image `--platform=linux/amd64`, multi-stage `node:22-slim`, pnpm 10.26.1 (corepack). `scripts/build-image.sh`, `docker-compose.yml` (db + core + client). entrypoint รัน `prisma migrate deploy` เมื่อมี `DATABASE_URL`. image ~1GB (ยังไม่ได้ลด)
+ทุก image `--platform=linux/amd64`, multi-stage `node:22-slim`, pnpm 10.26.1 (corepack). `scripts/build-image.sh` สร้าง 2 image: `kthok-core` (target `runner` ~300MB: `pnpm prune --prod` แล้วลบ prisma CLI/engines/typescript/effect/@types และไฟล์ wasm ของ Prisma) และ `kthok-core-migrate` (target `migrate` ~1GB รัน `prisma migrate deploy` แล้วจบ). compose: db → migrate (completed_successfully) → core → client. ไม่มี entrypoint script แล้ว
+- ถ้าเพิ่ม dependency ที่ runtime ต้องใช้ แล้วชื่อตรงกับรายการที่ลบใน Dockerfile ต้องแก้ Dockerfile ด้วย ทดสอบ image ด้วยการรันกับ DB ชั่วคราว (`prisma dev`) แล้วเรียก `/admin/overview`
 
 ## เทส (ห้ามใช้ 3000/3001)
 

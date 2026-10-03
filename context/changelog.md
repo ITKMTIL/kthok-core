@@ -9,6 +9,11 @@
 - context ที่อัปเดต: ไฟล์ไหน
 ```
 
+## 2026-10-03 — ชุดที่ 2: แชตเสริม, คำต้องห้าม, image เล็ก
+- `bdee310` สติกเกอร์/ตอบกลับ/ยกเลิกส่ง/อ่านแล้ว, `dee8c1c` คำต้องห้ามใน DB + admin endpoints + migration banned_words, `2e087c1` image runner ~300MB + migrate image, prompt keys, `5b9d9b6` test-stack ใช้ /tmp
+- ความเป็นนิรนาม: ไม่กระทบเพิ่ม — `banned_words` เก็บแค่คำ, read receipt ส่งแค่ id ข้อความและปิดได้, unsend ลบ HMAC ออกจาก memory ด้วย, สติกเกอร์/เสียงไม่มี HMAC จึงแนบรายงานไม่ได้
+- context ที่อัปเดต: core, ops, decisions, open-items, changelog
+
 ## 2026-10-03 — ฟีเจอร์ชุด 1–10
 - `8f77785` หัวข้อ/ไม่จับซ้ำ/คนรอ/หน่วงคนป่วน, prompts, `e26cdad` เกม, `74bba00` followup + reports + admin endpoints + migration reports, `54f8ae1` push + migration push_subscriptions, README
 - ความเป็นนิรนาม: กระทบ ผ่าน checklist โดยเจ้าของอนุมัติ — `reports` เก็บหลักฐานเข้ารหัส 30 วันเฉพาะข้อความที่ผ่านการตรวจ HMAC, admin เห็นแค่ "ผู้ใช้ #id"; `push_subscriptions` ผูก hash, payload แค่ kind; contact/HMAC อยู่ memory ≤10 นาที; stats `{faculties, topics}` ไม่มีตัวเลขต่อคณะ
