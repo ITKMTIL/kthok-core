@@ -20,6 +20,7 @@ import {
 import { fail } from '../common/utils/ack';
 import { hasBannedWords, maskBannedWords } from '../common/utils/word-filter';
 import { CALL_ENABLED, VOICE_ENABLED } from '../config/features';
+import { GamesService } from '../games/games.service';
 import { GATEWAY_OPTIONS, RECONNECT_GRACE_MS } from '../config/gateway';
 import {
   MatchmakingService,
@@ -66,6 +67,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     private readonly matchmaking: MatchmakingService,
     private readonly music: MusicService,
     private readonly prompts: PromptsService,
+    private readonly games: GamesService,
     private readonly reactions: ReactionsService,
     private readonly calls: CallService,
     private readonly rateLimit: RateLimitService,
@@ -347,6 +349,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     if (left) {
       this.music.clear(left.room.id);
       this.prompts.clear(left.room.id);
+      this.games.clear(left.room.id);
       this.reactions.clear(left.room.id);
       this.calls.clear(left.room.id);
     }
