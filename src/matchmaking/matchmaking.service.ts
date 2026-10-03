@@ -1,20 +1,26 @@
 import { Injectable } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { FacultyId } from '../common/constants/faculties';
+import { TopicId } from '../common/constants/topics';
 
 export interface Participant {
   socketId: string;
+  key: string;
   nickname: string;
   faculty: FacultyId;
+  topic: TopicId;
   userHash: string | null;
   admin: boolean;
   avoid: Set<string>;
+  recent: string[];
+  penaltyUntil: number;
 }
 
 export interface Room {
   id: string;
   owner: Participant;
   ownerPrefers: FacultyId | null;
+  topic: TopicId;
   guest: Participant | null;
   createdAt: number;
   matchedAt: number | null;
@@ -26,23 +32,42 @@ export interface FindResult {
   preferenceMet: boolean;
 }
 
+export interface WaitingSummary {
+  faculties: FacultyId[];
+  topics: TopicId[];
+}
+
+const RECENT_PARTNERS = 3;
+
 @Injectable()
 export class MatchmakingService {
   private readonly rooms = new Map<string, Room>();
   private readonly roomBySocket = new Map<string, string>();
 
-  findOrCreate(user: Participant, prefers: FacultyId | null): FindResult {
+  findOrCreate(
+    user: Participant,
+    prefers: FacultyId | null,
+    now = Date.now(),
+  ): FindResult {
     this.leave(user.socketId);
 
-    const room = this.pickOpenRoom(user, prefers, prefers !== null);
-    if (room) return this.join(room, user, prefers);
+    const room =
+      user.penaltyUntil > now
+        ? null
+        : this.pickOpenRoom(user, prefers, {
+            preferredOnly: prefers !== null,
+            allowRecent: false,
+            now,
+          });
+    if (room) return this.join(room, user, prefers, now);
 
     const created: Room = {
       id: randomUUID(),
       owner: user,
       ownerPrefers: prefers,
+      topic: user.topic,
       guest: null,
-      createdAt: Date.now(),
+      createdAt: now,
       matchedAt: null,
     };
     this.rooms.set(created.id, created);
@@ -50,15 +75,25 @@ export class MatchmakingService {
     return { room: created, matched: false, preferenceMet: false };
   }
 
-  fallback(socketId: string, roomId: string): FindResult | null {
+  fallback(
+    socketId: string,
+    roomId: string,
+    now = Date.now(),
+  ): FindResult | null {
     const own = this.rooms.get(roomId);
     if (!own || own.guest || own.owner.socketId !== socketId) return null;
+    if (own.owner.penaltyUntil > now) return null;
 
-    const target = this.pickOpenRoom(own.owner, own.ownerPrefers, false, own);
+    const target = this.pickOpenRoom(own.owner, own.ownerPrefers, {
+      preferredOnly: false,
+      allowRecent: true,
+      now,
+      exclude: own,
+    });
     if (!target) return null;
 
     this.rooms.delete(own.id);
-    return this.join(target, own.owner, own.ownerPrefers);
+    return this.join(target, own.owner, own.ownerPrefers, now);
   }
 
   leave(socketId: string): { room: Room; partner: Participant | null } | null {
@@ -102,14 +137,28 @@ export class MatchmakingService {
     return count;
   }
 
+  waitingSummary(): WaitingSummary {
+    const faculties = new Set<FacultyId>();
+    const topics = new Set<TopicId>();
+    for (const room of this.rooms.values()) {
+      if (room.guest) continue;
+      faculties.add(room.owner.faculty);
+      topics.add(room.topic);
+    }
+    return { faculties: [...faculties], topics: [...topics] };
+  }
+
   private join(
     room: Room,
     user: Participant,
     prefers: FacultyId | null,
+    now: number,
   ): FindResult {
     room.guest = user;
-    room.matchedAt = Date.now();
+    room.matchedAt = now;
     this.roomBySocket.set(user.socketId, room.id);
+    remember(room.owner, user.key);
+    remember(user, room.owner.key);
     return {
       room,
       matched: true,
@@ -120,17 +169,24 @@ export class MatchmakingService {
   private pickOpenRoom(
     user: Participant,
     prefers: FacultyId | null,
-    preferredOnly: boolean,
-    exclude?: Room,
+    options: {
+      preferredOnly: boolean;
+      allowRecent: boolean;
+      now: number;
+      exclude?: Room;
+    },
   ) {
     let best: Room | null = null;
     let bestScore = -1;
     for (const room of this.rooms.values()) {
-      if (room.guest || room === exclude) continue;
+      if (room.guest || room === options.exclude) continue;
+      if (room.topic !== user.topic) continue;
+      if (room.owner.penaltyUntil > options.now) continue;
       if (!canPair(room.owner, user)) continue;
+      if (!options.allowRecent && isRecent(room.owner, user)) continue;
       const ownerIsPreferred =
         prefers !== null && room.owner.faculty === prefers;
-      if (preferredOnly && !ownerIsPreferred) continue;
+      if (options.preferredOnly && !ownerIsPreferred) continue;
       const score =
         (ownerIsPreferred ? 2 : 0) +
         (room.ownerPrefers === user.faculty ? 1 : 0);
@@ -141,6 +197,21 @@ export class MatchmakingService {
     }
     return best;
   }
+}
+
+function remember(participant: Participant, key: string) {
+  const recent = participant.recent.filter((existing) => existing !== key);
+  recent.unshift(key);
+  participant.recent.splice(
+    0,
+    participant.recent.length,
+    ...recent.slice(0, RECENT_PARTNERS),
+  );
+}
+
+function isRecent(a: Participant, b: Participant): boolean {
+  if (a.admin && a.key === b.key) return false;
+  return a.recent.includes(b.key) || b.recent.includes(a.key);
 }
 
 function canPair(a: Participant, b: Participant): boolean {

@@ -2,6 +2,8 @@ import { Injectable, Logger } from '@nestjs/common';
 import { createHmac } from 'node:crypto';
 import { PrismaService } from '../prisma/prisma.service';
 
+const STRIKE_WINDOW_MS = 7 * 86_400_000;
+
 export interface UserRecord {
   bannedUntil: Date | null;
 }
@@ -95,6 +97,19 @@ export class UsersService {
     } catch (error) {
       this.report('avoidList', error);
       return [];
+    }
+  }
+
+  async strikes(hash: string, now = new Date()): Promise<number> {
+    if (!this.enabled) return 0;
+    const since = new Date(now.getTime() - STRIKE_WINDOW_MS);
+    try {
+      return await this.prisma.block.count({
+        where: { blocked: { hash }, createdAt: { gte: since } },
+      });
+    } catch (error) {
+      this.report('strikes', error);
+      return 0;
     }
   }
 

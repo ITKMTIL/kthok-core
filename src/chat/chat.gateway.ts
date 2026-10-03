@@ -12,6 +12,7 @@ import { Server, Socket } from 'socket.io';
 import { AuthService, Identity } from '../auth/auth.service';
 import { CallService } from '../call/call.service';
 import { isFacultyId } from '../common/constants/faculties';
+import { DEFAULT_TOPIC, isTopicId } from '../common/constants/topics';
 import {
   RateLimit,
   RateLimitService,
@@ -33,6 +34,10 @@ import { UsersService } from '../users/users.service';
 const MAX_NICKNAME_LENGTH = 24;
 const MAX_MESSAGE_LENGTH = 1000;
 const PREFERENCE_GRACE_MS = Number(process.env.PREFERENCE_GRACE_MS ?? 8000);
+const PENALTY_STEPS: [strikes: number, waitMs: number][] = [
+  [6, 90_000],
+  [3, 30_000],
+];
 
 const LIMITS = {
   find: { max: 4, windowMs: 10_000 },
@@ -44,6 +49,8 @@ const LIMITS = {
 interface ClientData {
   identity: Identity | null;
   avoid: Set<string>;
+  recent: string[];
+  penaltyMs: number;
 }
 
 @WebSocketGateway(GATEWAY_OPTIONS)
@@ -72,14 +79,19 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       client.disconnect(true);
       return;
     }
-    const data: ClientData = { identity, avoid: new Set() };
+    const data: ClientData = {
+      identity,
+      avoid: new Set(),
+      recent: [],
+      penaltyMs: 0,
+    };
     client.data = data;
     if (identity) {
       client.emit('auth:ok', {
         faculty: identity.faculty,
         admin: this.users.isAdmin(identity.userHash),
       });
-      void this.loadAccount(client, identity, data.avoid);
+      void this.loadAccount(client, identity, data);
     }
     client.emit('features', {
       call: CALL_ENABLED,
@@ -120,7 +132,9 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       return fail('invalid_nickname');
     }
     if (hasBannedWords(nickname)) return fail('nickname_not_allowed');
-    const { identity, avoid } = client.data as ClientData;
+    const { identity, avoid, recent, penaltyMs } = client.data as ClientData;
+    const topic = body?.topic ?? DEFAULT_TOPIC;
+    if (!isTopicId(topic)) return fail('invalid_topic');
     const faculty = this.auth.required ? identity?.faculty : body?.faculty;
     if (!isFacultyId(faculty)) return fail('invalid_faculty');
     const prefers = body?.preferFaculty ?? null;
@@ -133,11 +147,15 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
     const user: Participant = {
       socketId: client.id,
+      key: identity?.userHash ?? client.id,
       nickname,
       faculty,
+      topic,
       userHash: identity?.userHash ?? null,
       admin: identity ? this.users.isAdmin(identity.userHash) : false,
       avoid,
+      recent,
+      penaltyUntil: Date.now() + penaltyMs,
     };
     if (prefers !== null) this.stats.count('preference_requested', prefers);
     const { room, matched, preferenceMet } = this.matchmaking.findOrCreate(
@@ -149,8 +167,11 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       this.notifyOwner(room, preferenceMet);
       this.recordMatch(room);
       if (preferenceMet && prefers) this.stats.count('preference_met', prefers);
-    } else if (prefers !== null) {
-      setTimeout(() => this.fallback(client.id, room.id), PREFERENCE_GRACE_MS);
+    } else {
+      setTimeout(
+        () => this.fallback(client.id, room.id),
+        Math.max(PREFERENCE_GRACE_MS, penaltyMs + 100),
+      );
     }
     this.broadcastStats();
 
@@ -241,7 +262,8 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   private fallback(socketId: string, roomId: string) {
     const result = this.matchmaking.fallback(socketId, roomId);
     if (!result) {
-      if (this.matchmaking.roomOf(socketId)?.id === roomId) {
+      const room = this.matchmaking.roomOf(socketId);
+      if (room?.id === roomId && room.ownerPrefers !== null) {
         this.server.to(socketId).emit('match:fallback', { roomId });
       }
       return;
@@ -273,7 +295,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   private async loadAccount(
     client: Socket,
     identity: Identity,
-    avoid: Set<string>,
+    data: ClientData,
   ) {
     const user = await this.users.touch(identity.userHash, identity.faculty);
     if (this.users.isBanned(user)) {
@@ -282,8 +304,11 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       return;
     }
     for (const hash of await this.users.avoidList(identity.userHash)) {
-      avoid.add(hash);
+      data.avoid.add(hash);
     }
+    const strikes = await this.users.strikes(identity.userHash);
+    data.penaltyMs =
+      PENALTY_STEPS.find(([threshold]) => strikes >= threshold)?.[1] ?? 0;
   }
 
   private recordMatch(room: Room) {
@@ -345,6 +370,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     this.server.emit('stats', {
       online,
       waiting: this.matchmaking.waitingCount(),
+      ...this.matchmaking.waitingSummary(),
     });
   }
 }
