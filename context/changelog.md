@@ -9,6 +9,11 @@
 - context ที่อัปเดต: ไฟล์ไหน
 ```
 
+## 2026-10-03 — เกมดูดวง
+- `c3c2bb8` เกม taksa + tarot ใน games module
+- ความเป็นนิรนาม: ผ่าน — เก็บแค่วันในสัปดาห์ใน memory ของห้อง, เปิดให้อีกฝ่ายเห็นเฉพาะเมื่อผู้ใช้เลือก (ค่าเริ่มต้นปิด)
+- context ที่อัปเดต: core, privacy (ทั้งสอง repo), changelog
+
 ## 2026-10-03 — ชุดที่ 2: แชตเสริม, คำต้องห้าม, image เล็ก
 - `bdee310` สติกเกอร์/ตอบกลับ/ยกเลิกส่ง/อ่านแล้ว, `dee8c1c` คำต้องห้ามใน DB + admin endpoints + migration banned_words, `2e087c1` image runner ~300MB + migrate image, prompt keys, `5b9d9b6` test-stack ใช้ /tmp
 - ความเป็นนิรนาม: ไม่กระทบเพิ่ม — `banned_words` เก็บแค่คำ, read receipt ส่งแค่ id ข้อความและปิดได้, unsend ลบ HMAC ออกจาก memory ด้วย, สติกเกอร์/เสียงไม่มี HMAC จึงแนบรายงานไม่ได้

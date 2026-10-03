@@ -14,7 +14,7 @@ Port 3001. ทุกอย่างของห้องอยู่ใน memor
 | `call/` | สัญญาณ WebRTC, ring timeout, `turn.service.ts` ออก credential Cloudflare |
 | `prompts/` | `chat:prompt` สุ่มรหัสคำถาม `group.index` (ตามหัวข้อ, ไม่ซ้ำในห้อง) ส่งทั้งสองฝั่ง; ข้อความจริงอยู่ใน client `lib/i18n` (จำนวนต้องตรง `PROMPT_COUNTS`) |
 | `moderation/` | `WordListService` โหลด `banned_words` แล้ว `setExtraBannedWords` ให้ word-filter (regex ระดับ module) |
-| `games/` | `game:start/move/end` → `game:state` มุมมองต่อคน (`viewOf`), XO + RPS, ผู้เล่นอ้างด้วย socketId |
+| `games/` | `game:start/move/end` → `game:state` มุมมองต่อคน (`viewOf`), XO, RPS, `taksa` (move `{day, reveal}`; วงทักษา อาทิตย์→จันทร์→อังคาร→พุธ→เสาร์→พฤหัส→ราหู→ศุกร์, ตำแหน่ง = (อีกฝ่าย − ตัวเอง) mod 8 เริ่มบริวาร; `partnerDay` ส่งเฉพาะเมื่ออีกฝ่ายเลือก reveal), `tarot` (move `{}` สุ่ม 0–21 + กลับหัว ด้วย crypto.randomInt) |
 | `followup/` | record หลังจบห้องต่อ socket (trail: HMAC ข้อความ/null สำหรับเสียง+สติกเกอร์, sender, at; contact) ใช้ตรวจ `replyTo`, `chat:unsend` (≤60s เจ้าของเท่านั้น), `chat:read` (ต้องเป็นข้อความของอีกฝ่าย) อายุ `FOLLOWUP_MS`; `room:keep` แลก contact เมื่อกดทั้งคู่, `room:report` ตรวจ HMAC แล้วส่งให้ reports |
 | `reports/` | ตาราง `reports` หลักฐานเข้ารหัส (`sealSession` key `evidence:`+SESSION_SECRET), purge รายชั่วโมง, list/resolve/unban, `countAgainst` |
 | `push/` | `web-push` + VAPID, presence (hidden/disconnected) ต่อ socket, `nudge(socketId, kind)` throttle 30s, ลบ subscription 404/410 |
