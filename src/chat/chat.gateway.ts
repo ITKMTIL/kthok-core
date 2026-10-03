@@ -18,7 +18,7 @@ import {
 } from '../common/rate-limit/rate-limit.service';
 import { fail } from '../common/utils/ack';
 import { hasBannedWords, maskBannedWords } from '../common/utils/word-filter';
-import { CALL_ENABLED } from '../config/features';
+import { CALL_ENABLED, VOICE_ENABLED } from '../config/features';
 import { GATEWAY_OPTIONS, RECONNECT_GRACE_MS } from '../config/gateway';
 import {
   MatchmakingService,
@@ -83,6 +83,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     }
     client.emit('features', {
       call: CALL_ENABLED,
+      voice: VOICE_ENABLED,
       block: this.users.enabled && identity !== null,
     });
     if (this.cancelPendingClose(client.id))

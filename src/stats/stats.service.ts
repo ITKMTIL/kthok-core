@@ -12,6 +12,7 @@ export type Metric =
   | 'preference_requested'
   | 'preference_met'
   | 'message'
+  | 'voice'
   | 'call'
   | 'room'
   | 'room_seconds'
